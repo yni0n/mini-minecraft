@@ -49,7 +49,7 @@ public:
     void draw(Drawable &d);
     void drawInstanced(InstancedDrawable &d);
     // Utility function used in create()
-    char* textFileRead(const char*);
+    char* textFileRead(const char*); //读取shader代码转为字符串
     // Utility function that prints any shader compilation errors to the console
     void printShaderInfoLog(int shader);
     // Utility function that prints any shader linking errors to the console

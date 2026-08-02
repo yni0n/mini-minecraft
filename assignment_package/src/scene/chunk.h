@@ -4,6 +4,7 @@
 #include <array>
 #include <unordered_map>
 #include <cstddef>
+#include "drawable.h"
 
 
 //using namespace std;
@@ -12,18 +13,21 @@
 // of memory to store our different block types. By default, the size of a C++ enum
 // is that of an int (so, usually four bytes). This *does* limit us to only 256 different
 // block types, but in the scope of this project we'll never get anywhere near that many.
+//方块类型：空气，草，土，石头，水
 enum BlockType : unsigned char
 {
     EMPTY, GRASS, DIRT, STONE, WATER
 };
 
 // The six cardinal directions in 3D space
+//记录邻居位置
 enum Direction : unsigned char
 {
     XPOS, XNEG, YPOS, YNEG, ZPOS, ZNEG
 };
 
 // Lets us use any enum class as the key of a
+//遇到枚举类型，把它强制转换成数字
 // std::unordered_map
 struct EnumHash {
     template <typename T>
@@ -40,10 +44,10 @@ struct EnumHash {
 // to render the world block by block.
 
 // TODO have Chunk inherit from Drawable
-class Chunk {
+class Chunk : public Drawable{
 private:
     // All of the blocks contained within this Chunk
-    std::array<BlockType, 65536> m_blocks;
+    std::array<BlockType, 65536> m_blocks;//该chunk中所有块的类型
     // The coordinates of the chunk's lower-left corner in world space
     int minX, minZ;
     // This Chunk's four neighbors to the north, south, east, and west
@@ -53,9 +57,11 @@ private:
     std::unordered_map<Direction, Chunk*, EnumHash> m_neighbors;
 
 public:
-    Chunk(int x, int z);
+    Chunk(OpenGLContext* context, int x, int z);
     BlockType getLocalBlockAt(unsigned int x, unsigned int y, unsigned int z) const;
     BlockType getLocalBlockAt(int x, int y, int z) const;
     void setLocalBlockAt(unsigned int x, unsigned int y, unsigned int z, BlockType t);
     void linkNeighbor(uPtr<Chunk>& neighbor, Direction dir);
+    //覆盖 Drawable 的纯虚函数
+    void createVBOdata() override;
 };

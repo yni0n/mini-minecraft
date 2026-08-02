@@ -17,13 +17,14 @@ enum BufferType : unsigned char {
 class Drawable
 {
 protected:
-    dict<BufferType, GLuint> bufHandles;
-    dict<BufferType, bool> bufGenerated;
+    dict<BufferType, GLuint> bufHandles; //记录各个缓冲区的句柄(layout)
+    dict<BufferType, bool> bufGenerated; //是否已经申请好空间
     // The length of the index buffer indicated by the key.
     // Unless you have more than one index buffer, this map
     // will have just one key-value pair.
-    dict<BufferType, int> indexCounts;
+    dict<BufferType, int> indexCounts; //索引数量
 
+    //当前的上下文
     OpenGLContext* mp_context; // Since Qt's OpenGL support is done through classes like QOpenGLFunctions_3_2_Core,
                                // we need to pass our OpenGL context to the Drawable in order to call GL functions
                                // from within this class.
@@ -54,17 +55,18 @@ public:
 // some of the milestone 3 ideas.
 class InstancedDrawable : public Drawable {
 protected:
-    int m_numInstances;
+    int m_numInstances; //要画几个
 
 public:
     InstancedDrawable(OpenGLContext* mp_context);
     virtual ~InstancedDrawable();
     int instanceCount() const;
 
-    void generateOffsetBuf();
-    bool bindOffsetBuf();
-    void clearOffsetBuf();
+    void generateOffsetBuf(); //申请空间
+    bool bindOffsetBuf(); //把偏移量数据绑定上去
+    void clearOffsetBuf(); //清空数据
     void clearColorBuf();
 
+    //虚函数，自己写要怎么画
     virtual void createInstancedVBOdata(std::vector<glm::vec3> &offsets, std::vector<glm::vec3> &colors) = 0;
 };

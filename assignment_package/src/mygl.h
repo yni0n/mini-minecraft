@@ -17,25 +17,26 @@ class MyGL : public OpenGLContext
 {
     Q_OBJECT
 private:
-    WorldAxes m_worldAxes; // A wireframe representation of the world axes. It is hard-coded to sit centered at (32, 128, 32).
-    ShaderProgram m_progLambert;// A shader program that uses lambertian reflection
-    ShaderProgram m_progFlat;// A shader program that uses "flat" reflection (no shadowing at all)
-    ShaderProgram m_progInstanced;// A shader program that is designed to be compatible with instanced rendering
+    WorldAxes m_worldAxes; // 世界坐标轴。这是一个线框模型，用来在屏幕上画出 X、Y、Z 轴，方便你开发时调试方向。硬编码中心在(32, 128, 32).
+    ShaderProgram m_progLambert;// 使用Lambert反射的着色器(漫反射)
 
-    GLuint vao; // A handle for our vertex array object. This will store the VBOs created in our geometry classes.
+    ShaderProgram m_progFlat;// Flat 反射，也就是纯色渲染，不考虑任何光影。
+    ShaderProgram m_progInstanced;//专门为实例化渲染（Instanced Rendering）设计的。
+
+    GLuint vao; // vertex array object句柄. This will store the VBOs created in our geometry classes.
                 // Don't worry too much about this. Just know it is necessary in order to render geometry.
 
-    Terrain m_terrain; // All of the Chunks that currently comprise the world.
-    Player m_player; // The entity controlled by the user. Contains a camera to display what it sees as well.
-    InputBundle m_inputs; // A collection of variables to be updated in keyPressEvent, mouseMoveEvent, mousePressEvent, etc.
+    Terrain m_terrain; // 地形对象。它包含了组成整个世界的所有区块（Chunks）。
+    Player m_player; // 玩家对象。里面包含了玩家的位置、速度，以及摄像机。
+    InputBundle m_inputs; // 输入数据包。专门用来收集玩家操作：keyPressEvent, mouseMoveEvent, mousePressEvent, etc.
 
-    QTimer m_timer; // Timer linked to tick(). Fires approximately 60 times per second.
+    QTimer m_timer; // Timer linked to tick(). 60帧/s。
 
-    void moveMouseToCenter(); // Forces the mouse position to the screen's center. You should call this
+    void moveMouseToCenter(); // 强制把鼠标移动到屏幕正中心。 You should call this
                               // from within a mouse move event after reading the mouse movement so that
                               // your mouse stays within the screen bounds and is always read.
 
-    void sendPlayerDataToGUI() const;
+    void sendPlayerDataToGUI() const;//把玩家数据发送给界面。signal
 
 
 public:
@@ -47,13 +48,13 @@ public:
     // invocations are valid (before this, they
     // will cause segfaults)
     void initializeGL() override;
-    // Called whenever MyGL is resized.
+    // Called whenever MyGL is resized.玩家拖拽改变了窗口的大小，就会触发。
     void resizeGL(int w, int h) override;
-    // Called whenever MyGL::update() is called.
+    // Called whenever MyGL::update() is called.主渲染循环
     // In the base code, update() is called from tick().
     void paintGL() override;
 
-    // Called from paintGL().
+    // Called from paintGL().绘制地形
     // Calls Terrain::draw().
     void renderTerrain();
 
@@ -70,7 +71,7 @@ protected:
     void mousePressEvent(QMouseEvent *e) override;
 
 private slots:
-    void tick(); // Slot that gets called ~60 times per second by m_timer firing.
+    void tick(); // 定时器绑定的槽函数。called ~60 times per second by m_timer firing.
 
 signals:
     void sig_sendPlayerPos(QString) const;

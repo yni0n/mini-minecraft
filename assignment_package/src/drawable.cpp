@@ -46,6 +46,7 @@ bool Drawable::bindBuffer(BufferType buf) {
     if(bufGenerated[buf]) {
         // Should you have more than one kind of index buffer,
         // make sure to update this conditional to include them.
+        //如果使用索引，则绑定EBO，否则绑定VAO
         buf == INDEX ?
         mp_context->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bufHandles[buf]) :
         mp_context->glBindBuffer(GL_ARRAY_BUFFER, bufHandles[buf]);

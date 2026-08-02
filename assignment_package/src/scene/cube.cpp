@@ -5,7 +5,7 @@
 static const int CUB_IDX_COUNT = 36;
 static const int CUB_VERT_COUNT = 24;
 
-glm::vec4 GetCubeNormal(const glm::vec4& P)
+glm::vec4 GetCubeNormal(const glm::vec4& P)//法线计算
 {
     int idx = 0;
     float val = -1;
@@ -119,7 +119,7 @@ void createCubeVertexNormals(glm::vec4 (&cub_vert_nor)[CUB_VERT_COUNT])
 void createCubeIndices(GLuint (&cub_idx)[CUB_IDX_COUNT])
 {
     int idx = 0;
-    for(int i = 0; i < 6; i++){
+    for(int i = 0; i < 6; i++){//6个面，每个面2个三角形、6个点
         cub_idx[idx++] = i*4;
         cub_idx[idx++] = i*4+1;
         cub_idx[idx++] = i*4+2;
@@ -135,11 +135,11 @@ void Cube::createVBOdata()
     glm::vec4 sph_vert_pos[CUB_VERT_COUNT];
     glm::vec4 sph_vert_nor[CUB_VERT_COUNT];
 
-    createCubeVertexPositions(sph_vert_pos);
-    createCubeVertexNormals(sph_vert_nor);
-    createCubeIndices(sph_idx);
+    createCubeVertexPositions(sph_vert_pos); //顶点位置
+    createCubeVertexNormals(sph_vert_nor);  //顶点法线
+    createCubeIndices(sph_idx);             //索引
 
-    indexCounts[INDEX] = CUB_IDX_COUNT;
+    indexCounts[INDEX] = CUB_IDX_COUNT;  //绘制“一个” Cube 所需要的“索引点”的总数量，36
 
     // Create a VBO on our GPU and store its handle in bufIdx
     generateBuffer(INDEX);
@@ -162,7 +162,7 @@ void Cube::createVBOdata()
 
 
 void Cube::createInstancedVBOdata(std::vector<glm::vec3> &offsets, std::vector<glm::vec3> &colors) {
-    m_numInstances = offsets.size();
+    m_numInstances = offsets.size(); //要画几个cube
 
     generateBuffer(INSTANCED_OFFSET);
     bindBuffer(INSTANCED_OFFSET);

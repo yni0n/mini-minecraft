@@ -19,6 +19,7 @@ inline const char *glGS(GLenum e)
     return reinterpret_cast<const char *>(glGetString(e));
 }
 
+//打印错误信息
 void OpenGLContext::debugContextVersion()
 {
     QOpenGLContext *ctx = context();
