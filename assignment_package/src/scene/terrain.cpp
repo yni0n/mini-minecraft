@@ -1,6 +1,7 @@
 #include "terrain.h"
 #include "cube.h"
 #include <stdexcept>
+#include <glm/gtc/noise.hpp>
 #include <iostream>
 
 Terrain::Terrain(OpenGLContext *context)
@@ -188,58 +189,192 @@ void Terrain::expandTerrain(glm::vec3 playerPos) {
             // ---- 生成新区块 ----
             instantiateChunkAt(checkX, checkZ);
             uPtr<Chunk> &newChunk = getChunkAt(checkX, checkZ);
-            // TODO: 后续可以在这里填充方块（地形生成）
+            fillChunkWithTerrain(newChunk.get(), checkX, checkZ);  // ★ 填充噪声地形
             newChunk->createVBOdata();
+        }
+    }
+
+
+}
+
+// 多倍频 Perlin 噪声，返回值范围约为 [-1, 1]
+float Terrain::fractalNoise(glm::vec2 p, int octaves) {
+    float value = 0.f;
+    float amplitude = 1.f;   // 振幅从 1 开始
+    float frequency = 1.f;   // 频率从 1 开始
+    float maxValue = 0.f;    // 归一化分母
+
+    for(int i = 0; i < octaves; ++i) {
+        value += amplitude * glm::perlin(p * frequency);
+        maxValue += amplitude;
+        amplitude *= 0.5f;   // 每次振幅减半 → 细节越来越小
+        frequency *= 2.f;    // 每次频率翻倍 → 细节越来越密
+    }
+    return value / maxValue; // 归一化到约 [-1, 1]
+}
+
+//草原丘陵
+float Terrain::getGrasslandHeight(float x, float z) {
+    float h = fractalNoise(glm::vec2(x * 0.01f, z * 0.01f), 4);
+    return 138.f + h * 20.f;  // 高度范围: 128 ± 20 → [108, 148]
+}
+
+//陡峭山
+float Terrain::getMountainHeight(float x, float z) {
+    float val = 0.f;
+    float amp = 1.f;
+    float freq = 0.003f;
+    float maxAmp = 0.f;
+
+    for(int i = 0; i < 6; ++i) {
+        float p = glm::perlin(glm::vec2(x * freq, z * freq));
+        val += amp * glm::abs(p);    // abs → 山脊效果
+        maxAmp += amp;
+        amp *= 0.5f;
+        freq *= 2.f;
+    }
+    return 128.f + (val / maxAmp) * 80.f;  // [128, 208]
+}
+
+//地形属性低频噪声 + smoothstep
+float Terrain::getBiomeBlend(float x, float z) {
+    // 低频 Perlin → 大片区域缓慢变化
+    float noise = glm::perlin(glm::vec2(x * 0.0008f, z * 0.0008f));
+    // 从 [-1, 1] 映射到 [0, 1]
+    float t = (noise + 1.f) * 0.5f;
+    // smoothstep: 在 [0.25, 0.75] 之间平滑过渡
+    return glm::smoothstep(0.25f, 0.75f, t);
+}
+
+void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
+    int startX = MinX;
+    int startZ = MinZ;
+
+    for(int x = 0; x < 16; ++x) {
+        for(int z = 0; z < 16; ++z) {
+            int worldX = startX + x;
+            int worldZ = startZ + z;
+
+            // ---- 第一步：算三种噪声 ----
+            float grassH   = getGrasslandHeight(worldX, worldZ);
+            float mountainH = getMountainHeight(worldX, worldZ);
+            float blend     = getBiomeBlend(worldX, worldZ);
+
+            // ---- 第二步：线性插值得到最终高度 ----
+            float finalH = glm::mix(grassH, mountainH, blend);
+            int   topY   = static_cast<int>(glm::floor(finalH));
+
+            // ---- 第三步：逐 Y 填充方块 ----
+            for(int y = 0; y <= 255; ++y) {
+                BlockType block;
+
+                if(y <= 128) {
+                    // 海平面以下全是石头
+                    block = STONE;
+                }
+                else if(y <= topY) {
+                    // 在地表高度以下
+                    if(blend < 0.5f) {
+                        // ---- 草地区 ----
+                        block = (y == topY) ? GRASS : DIRT;
+                    } else {
+                        // ---- 山脉区 ----
+                        block = (y == topY && y > 200) ? SNOW : STONE;
+                    }
+                }
+                else {
+                    // 在地表高度以上 → 空气
+                    block = EMPTY;
+                }
+
+                // ---- 第四步：注水 ----
+                // y ∈ [129, 138] 且该位置是空气 → 填水
+                if(y > 128 && y <= 138 && block == EMPTY) {
+                    block = WATER;
+                }
+
+                chunk->setLocalBlockAt(x, y, z, block);
+            }
         }
     }
 }
 
-void Terrain::CreateTestScene()
+float Terrain::getHeightAt(float x, float z) const {
+    float grassH     = getGrasslandHeight(x, z);
+    float mountainH  = getMountainHeight(x, z);
+    float blend      = getBiomeBlend(x, z);
+    return glm::mix(grassH, mountainH, blend);
+}
+
+void Terrain::CreateTestScene(glm::vec3 playerPos)
 {
     // TODO: DELETE THIS LINE WHEN YOU DELETE m_geomCube!
     //m_geomCube.createVBOdata();
+    // ---- 玩家所在的 Zone 左下角 ----
+    int playerZoneX = static_cast<int>(glm::floor(playerPos.x / 64.f)) * 64;
+    int playerZoneZ = static_cast<int>(glm::floor(playerPos.z / 64.f)) * 64;
 
     // Create the Chunks that will
     // store the blocks for our
     // initial world space
-    for(int x = 0; x < 64; x += 16) {
-        for(int z = 0; z < 64; z += 16) {
-            instantiateChunkAt(x, z);
-        }
-    }
-    // Tell our existing terrain set that
-    // the "generated terrain zone" at (0,0)
-    // now exists.
-    m_generatedTerrain.insert(toKey(0, 0));
+    // ---- 生成 3×3 个 Zone（每个 Zone = 4×4 个 Chunk） ----
+    for(int dz = -1; dz <= 1; ++dz) {
+        for(int dx = -1; dx <= 1; ++dx) {
+            int zoneX = playerZoneX + dx * 64;
+            int zoneZ = playerZoneZ + dz * 64;
 
-    // Create the basic terrain floor
-    for(int x = 0; x < 64; ++x) {
-        for(int z = 0; z < 64; ++z) {
-            if((x + z) % 2 == 0) {
-                setGlobalBlockAt(x, 128, z, STONE);
-            }
-            else {
-                setGlobalBlockAt(x, 128, z, DIRT);
+            int64_t zoneKey = toKey(zoneX, zoneZ);
+            if(m_generatedTerrain.find(zoneKey) != m_generatedTerrain.end())
+                continue;                        // 已存在，跳过
+
+            m_generatedTerrain.insert(zoneKey);
+
+            // 为该 Zone 创建 4×4 = 16 个 Chunk
+            for(int cx = 0; cx < 64; cx += 16) {
+                for(int cz = 0; cz < 64; cz += 16) {
+                    instantiateChunkAt(zoneX + cx, zoneZ + cz);
+                }
             }
         }
     }
-    // Add "walls" for collision testing
-    for(int x = 0; x < 64; ++x) {
-        setGlobalBlockAt(x, 129, 16, GRASS);
-        setGlobalBlockAt(x, 130, 16, GRASS);
-        setGlobalBlockAt(x, 129, 48, GRASS);
-        setGlobalBlockAt(16, 130, x, GRASS);
-    }
-    // Add a central column
-    for(int y = 129; y < 140; ++y) {
-        setGlobalBlockAt(32, y, 32, GRASS);
-    }
+
+    // // Create the basic terrain floor
+    // for(int x = 0; x < 64; ++x) {
+    //     for(int z = 0; z < 64; ++z) {
+    //         if((x + z) % 2 == 0) {
+    //             setGlobalBlockAt(x, 128, z, STONE);
+    //         }
+    //         else {
+    //             setGlobalBlockAt(x, 128, z, DIRT);
+    //         }
+    //     }
+    // }
+    // // Add "walls" for collision testing
+    // for(int x = 0; x < 64; ++x) {
+    //     setGlobalBlockAt(x, 129, 16, GRASS);
+    //     setGlobalBlockAt(x, 130, 16, GRASS);
+    //     setGlobalBlockAt(x, 129, 48, GRASS);
+    //     setGlobalBlockAt(16, 130, x, GRASS);
+    // }
+    // // Add a central column
+    // for(int y = 129; y < 140; ++y) {
+    //     setGlobalBlockAt(32, y, 32, GRASS);
+    // }
 
     // ★ 放完所有方块后，统一构建每个 Chunk 的 VBO
-    for(int x = 0; x < 64; x += 16) {
-        for(int z = 0; z < 64; z += 16) {
-            uPtr<Chunk> &c = getChunkAt(x, z);
-            c->createVBOdata();
+    // ---- 对所有新创建的 Chunk 填充地形并构建 VBO ----
+    for(int dz = -1; dz <= 1; ++dz) {
+        for(int dx = -1; dx <= 1; ++dx) {
+            int zoneX = playerZoneX + dx * 64;
+            int zoneZ = playerZoneZ + dz * 64;
+
+            for(int cx = 0; cx < 64; cx += 16) {
+                for(int cz = 0; cz < 64; cz += 16) {
+                    uPtr<Chunk> &c = getChunkAt(zoneX + cx, zoneZ + cz);
+                    fillChunkWithTerrain(c.get(), zoneX + cx, zoneZ + cz );   // 噪声填充
+                    c->createVBOdata();               // 构建 VBO
+                }
+            }
         }
     }
 }

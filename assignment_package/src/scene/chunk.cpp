@@ -35,6 +35,7 @@ static glm::vec4 blockColor(BlockType t) {
     case DIRT:  return glm::vec4(121.f/255,  85.f/255,  58.f/255, 1.f);
     case STONE: return glm::vec4(0.5f, 0.5f, 0.5f, 1.f);
     case WATER: return glm::vec4(0.f, 0.f, 0.75f, 1.f);
+    case SNOW:  return glm::vec4(1.f, 1.f, 1.f, 1.f);
     default:    return glm::vec4(1.f, 0.f, 1.f, 1.f);   // debug 紫色
     }
 }

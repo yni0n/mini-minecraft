@@ -16,7 +16,7 @@
 //方块类型：空气，草，土，石头，水
 enum BlockType : unsigned char
 {
-    EMPTY, GRASS, DIRT, STONE, WATER
+    EMPTY, GRASS, DIRT, STONE, WATER, SNOW
 };
 
 // The six cardinal directions in 3D space

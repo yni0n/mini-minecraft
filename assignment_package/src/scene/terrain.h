@@ -92,8 +92,16 @@ public:
 
     // ★ 新增：根据玩家位置检查并扩展地形
     void expandTerrain(glm::vec3 playerPos);
+    // ★ 新增：地形生成
+    static float fractalNoise(glm::vec2 p, int octaves);//分型柏林
+    static float getGrasslandHeight(float x, float z);
+    static float getMountainHeight(float x, float z);
+    static float getBiomeBlend(float x, float z);
+    void fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ);
+    // ★ 新增：用噪声函数直接计算 (x,z) 处的地表高度（不依赖实际方块数据）
+    float getHeightAt(float x, float z) const;
 
     // Initializes the Chunks that store the 64 x 256 x 64 block scene you
     // see when the base code is run.
-    void CreateTestScene();
+    void CreateTestScene(glm::vec3 playerPos);   // ★ 接受玩家位置
 };

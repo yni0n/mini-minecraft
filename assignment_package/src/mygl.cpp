@@ -67,7 +67,14 @@ void MyGL::initializeGL()
     // using multiple VAOs, we can just bind one once.
     glBindVertexArray(vao);
 
-    m_terrain.CreateTestScene();//初始化地形
+    m_terrain.CreateTestScene(m_player.mcr_position);//初始化地形
+
+    // ★ 把玩家抬到地表以上 2 格
+    float groundY = m_terrain.getHeightAt(
+        m_player.mcr_position.x,
+        m_player.mcr_position.z);
+    float deltaY = (groundY + 2.f) - m_player.mcr_position.y;
+    m_player.moveUpGlobal(deltaY);       // Player 重写了此方法，相机也会同步移动
 }
 
 //改变窗口大小就触发
