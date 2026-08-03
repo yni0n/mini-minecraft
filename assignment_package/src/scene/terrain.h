@@ -90,6 +90,9 @@ public:
     // ShaderProgram
     void draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram);
 
+    // ★ 新增：根据玩家位置检查并扩展地形
+    void expandTerrain(glm::vec3 playerPos);
+
     // Initializes the Chunks that store the 64 x 256 x 64 block scene you
     // see when the base code is run.
     void CreateTestScene();

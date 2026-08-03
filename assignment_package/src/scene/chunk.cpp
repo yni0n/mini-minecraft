@@ -39,7 +39,7 @@ static glm::vec4 blockColor(BlockType t) {
     }
 }
 
-Chunk::Chunk(OpenGLContext* context, int x, int z) : Drawable(context), m_blocks(), minX(x), minZ(z), m_neighbors{{XPOS, nullptr}, {XNEG, nullptr}, {ZPOS, nullptr}, {ZNEG, nullptr}}
+Chunk::Chunk(OpenGLContext* context, int x, int z) : InstancedDrawable(context), m_blocks(), minX(x), minZ(z), m_neighbors{{XPOS, nullptr}, {XNEG, nullptr}, {ZPOS, nullptr}, {ZNEG, nullptr}}
 {
     std::fill_n(m_blocks.begin(), 65536, EMPTY);
 }
@@ -76,12 +76,10 @@ void Chunk::linkNeighbor(uPtr<Chunk> &neighbor, Direction dir) {
     }
 }
 
-// ============== 面剔除 VBO 生成 ==============
+// ============== 面剔除交错 VBO 生成 ==============
 void Chunk::createVBOdata() {
-    std::vector<glm::vec4> posData;  // 世界坐标顶点
-    std::vector<glm::vec4> norData;  // 法线
-    std::vector<glm::vec4> colData;  // 逐顶点颜色
-    std::vector<GLuint>   idxData;   // 三角形索引
+    std::vector<GLfloat> interleaved;   // 存放 pos+ nor+ col 的交错数据
+    std::vector<GLuint>  indices;        // 三角形索引
 
     for(int x = 0; x < 16; ++x) {
         for(int z = 0; z < 16; ++z) {
@@ -138,47 +136,56 @@ void Chunk::createVBOdata() {
                     if(adj != EMPTY) continue;
 
                     // 生成该面的 4 个顶点 + 6 个索引
-                    GLuint baseIdx = static_cast<GLuint>(posData.size());
+                    GLuint baseIdx = static_cast<GLuint>(interleaved.size() / 12);
+                    glm::vec4 col = blockColor(curr);
+
                     for(int v = 0; v < 4; ++v) {
-                        posData.push_back(glm::vec4(worldBase + fd.corners[v], 1.0f));
-                        norData.push_back(fd.normal);
-                        colData.push_back(blockColor(curr));
+                        glm::vec4 pos = glm::vec4(worldBase + fd.corners[v], 1.0f);
+                        // 每个顶点 12 个 float：pos(4) + nor(4) + col(4)
+                        interleaved.push_back(pos.x);
+                        interleaved.push_back(pos.y);
+                        interleaved.push_back(pos.z);
+                        interleaved.push_back(pos.w);
+                        interleaved.push_back(fd.normal.x);
+                        interleaved.push_back(fd.normal.y);
+                        interleaved.push_back(fd.normal.z);
+                        interleaved.push_back(fd.normal.w);
+                        interleaved.push_back(col.r);
+                        interleaved.push_back(col.g);
+                        interleaved.push_back(col.b);
+                        interleaved.push_back(col.a);
                     }
-                    idxData.push_back(baseIdx);
-                    idxData.push_back(baseIdx + 1);
-                    idxData.push_back(baseIdx + 2);
-                    idxData.push_back(baseIdx);
-                    idxData.push_back(baseIdx + 2);
-                    idxData.push_back(baseIdx + 3);
+
+                    indices.push_back(baseIdx);
+                    indices.push_back(baseIdx + 1);
+                    indices.push_back(baseIdx + 2);
+                    indices.push_back(baseIdx);
+                    indices.push_back(baseIdx + 2);
+                    indices.push_back(baseIdx + 3);
                 }
             }
         }
     }
 
-    // 上传 GPU
-    indexCounts[INDEX] = static_cast<int>(idxData.size());
+    // ---- 上传 GPU ----
+    indexCounts[INDEX] = static_cast<int>(indices.size());
 
     generateBuffer(INDEX);
     bindBuffer(INDEX);
     mp_context->glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                             idxData.size() * sizeof(GLuint),
-                             idxData.data(), GL_STATIC_DRAW);
+                             indices.size() * sizeof(GLuint),
+                             indices.data(), GL_STATIC_DRAW);
 
-    generateBuffer(POSITION);
-    bindBuffer(POSITION);
+    generateBuffer(INTERLEAVED);
+    bindBuffer(INTERLEAVED);
     mp_context->glBufferData(GL_ARRAY_BUFFER,
-                             posData.size() * sizeof(glm::vec4),
-                             posData.data(), GL_STATIC_DRAW);
+                             interleaved.size() * sizeof(GLfloat),
+                             interleaved.data(), GL_STATIC_DRAW);
+}
 
-    generateBuffer(NORMAL);
-    bindBuffer(NORMAL);
-    mp_context->glBufferData(GL_ARRAY_BUFFER,
-                             norData.size() * sizeof(glm::vec4),
-                             norData.data(), GL_STATIC_DRAW);
-
-    generateBuffer(COLOR);
-    bindBuffer(COLOR);
-    mp_context->glBufferData(GL_ARRAY_BUFFER,
-                             colData.size() * sizeof(glm::vec4),
-                             colData.data(), GL_STATIC_DRAW);
+// ============== InstancedDrawable 纯虚函数占位 ==============
+void Chunk::createInstancedVBOdata(std::vector<glm::vec3> &offsets,
+                                   std::vector<glm::vec3> &colors) {
+    // 当前 Chunk 使用 createVBOdata() + drawInterleaved()
+    // 此函数仅在后续需要实例化渲染时实现
 }

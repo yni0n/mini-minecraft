@@ -92,6 +92,7 @@ void MyGL::resizeGL(int w, int h) {
 // all per-frame actions here, such as performing physics updates on all
 // entities in the scene.
 void MyGL::tick() {
+    m_terrain.expandTerrain(m_player.mcr_position);   // ★ 新增：每帧检查
     update(); // Calls paintGL() as part of a larger QOpenGLWidget pipeline
     sendPlayerDataToGUI(); // Updates the info in the secondary window displaying player data
 }
@@ -137,12 +138,25 @@ void MyGL::paintGL() {
 //指定区域并绘制，使用实例绘制
 void MyGL::renderTerrain() {
     //m_terrain.draw(0, 64, 0, 64, &m_progInstanced);
+    // 玩家所在的 64×64 区域左下角，需要渲染玩家周围的9个Zone
+    int playerZoneX = static_cast<int>(glm::floor(
+                          m_player.mcr_position.x / 64.f)) * 64;
+    int playerZoneZ = static_cast<int>(glm::floor(
+                          m_player.mcr_position.z / 64.f)) * 64;
+
     // Chunk 顶点是世界坐标，不需要模型变换
     m_progLambert.setUnifMat4("u_Model", glm::mat4(1.0f));
     m_progLambert.setUnifMat4("u_ModelInvTr", glm::mat4(1.0f));
-    m_terrain.draw(0, 64, 0, 64, &m_progLambert);
+    // 绘制玩家周围的 3×3 个 64×64 区域
+    for(int dx = -1; dx <= 1; ++dx) {
+        for(int dz = -1; dz <= 1; ++dz) {
+            int zoneX = playerZoneX + dx * 64;
+            int zoneZ = playerZoneZ + dz * 64;
+            m_terrain.draw(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
+                           &m_progLambert);
+        }
+    }
 }
-
 
 //控制移动旋转和加速等
 void MyGL::keyPressEvent(QKeyEvent *e) {

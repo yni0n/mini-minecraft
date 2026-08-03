@@ -258,6 +258,113 @@ void ShaderProgram::drawInstanced(InstancedDrawable &d) {
     context->printGLErrorLog();
 }
 
+void ShaderProgram::drawInterleaved(Drawable &d) {
+    if(d.elemCount(INDEX) < 0) {
+        throw std::invalid_argument(
+            "Drawable has no index data. Call createVBOdata() first.");
+    }
+    useMe();
+
+    d.bindBuffer(INTERLEAVED);
+    int stride = 3 * static_cast<int>(sizeof(glm::vec4));  // 48 bytes
+
+    int handle;
+
+    // vs_Pos → offset 0
+    if ((handle = m_attribs["vs_Pos"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false, stride, (void*)0);
+    }
+
+    // vs_Nor → offset 16
+    if ((handle = m_attribs["vs_Nor"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false, stride, (void*)sizeof(glm::vec4));
+    }
+
+    // vs_Col → offset 32
+    if ((handle = m_attribs["vs_Col"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false, stride, (void*)(2 * sizeof(glm::vec4)));
+    }
+
+    d.bindBuffer(INDEX);
+    context->glDrawElements(d.drawMode(), d.elemCount(INDEX),
+                            GL_UNSIGNED_INT, 0);
+
+    if (m_attribs["vs_Pos"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Pos"]);
+    if (m_attribs["vs_Nor"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Nor"]);
+    if (m_attribs["vs_Col"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Col"]);
+
+    context->printGLErrorLog();
+}
+
+void ShaderProgram::drawInterleavedInstanced(InstancedDrawable &d) {
+    if(d.elemCount(INDEX) < 0) {
+        throw std::invalid_argument(
+            "InstancedDrawable has no index data. Call createVBOdata() first.");
+    }
+    useMe();
+
+    // ==================== 逐顶点数据 — 交错 VBO ====================
+    d.bindBuffer(INTERLEAVED);
+    int stride = 3 * static_cast<int>(sizeof(glm::vec4));  // 48 bytes
+
+    int handle;
+
+    // vs_Pos — 每顶点换一次 (divisor=0)
+    if ((handle = m_attribs["vs_Pos"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false,
+                                       stride, (void*)0);
+        context->glVertexAttribDivisor(handle, 0);   // divisor=0 → 逐顶点
+    }
+
+    // vs_Nor — 每顶点换一次 (divisor=0)
+    if ((handle = m_attribs["vs_Nor"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false,
+                                       stride, (void*)sizeof(glm::vec4));
+        context->glVertexAttribDivisor(handle, 0);
+    }
+
+    // vs_ColInstanced — 每实例换一次 (divisor=1)
+    // 注意：用的是 instanced shader 的 vs_ColInstanced（vec3）而非 vs_Col（vec4）
+    if ((handle = m_attribs["vs_ColInstanced"]) != -1 && d.bindBuffer(COLOR)) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 3, GL_FLOAT, false,
+                                       0, nullptr);
+        context->glVertexAttribDivisor(handle, 1);   // divisor=1 → 逐实例
+    }
+
+    // vs_OffsetInstanced — 每实例换一次 (divisor=1)
+    if ((handle = m_attribs["vs_OffsetInstanced"]) != -1
+        && d.bindBuffer(INSTANCED_OFFSET)) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 3, GL_FLOAT, false,
+                                       0, nullptr);
+        context->glVertexAttribDivisor(handle, 1);
+    }
+
+    // ==================== 实例化绘制 ====================
+    d.bindBuffer(INDEX);
+    context->glDrawElementsInstanced(d.drawMode(), d.elemCount(INDEX),
+                                     GL_UNSIGNED_INT, 0,
+                                     d.instanceCount());
+
+    // ==================== 清理 ====================
+    if (m_attribs["vs_Pos"] != -1)
+        context->glDisableVertexAttribArray(m_attribs["vs_Pos"]);
+    if (m_attribs["vs_Nor"] != -1)
+        context->glDisableVertexAttribArray(m_attribs["vs_Nor"]);
+    if (m_attribs["vs_ColInstanced"] != -1)
+        context->glDisableVertexAttribArray(m_attribs["vs_ColInstanced"]);
+    if (m_attribs["vs_OffsetInstanced"] != -1)
+        context->glDisableVertexAttribArray(m_attribs["vs_OffsetInstanced"]);
+
+    context->printGLErrorLog();
+}
+
 char* ShaderProgram::textFileRead(const char* fileName) {
     char* text = nullptr;
 

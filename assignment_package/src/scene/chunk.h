@@ -44,7 +44,7 @@ struct EnumHash {
 // to render the world block by block.
 
 // TODO have Chunk inherit from Drawable
-class Chunk : public Drawable{
+class Chunk : public InstancedDrawable{
 private:
     // All of the blocks contained within this Chunk
     std::array<BlockType, 65536> m_blocks;//该chunk中所有块的类型
@@ -62,6 +62,11 @@ public:
     BlockType getLocalBlockAt(int x, int y, int z) const;
     void setLocalBlockAt(unsigned int x, unsigned int y, unsigned int z, BlockType t);
     void linkNeighbor(uPtr<Chunk>& neighbor, Direction dir);
-    //覆盖 Drawable 的纯虚函数
+    //覆盖 Drawable 的纯虚函数，交错
     void createVBOdata() override;
+    //InstancedDrawable 纯虚函数，交错
+    void createInstancedVBOdata(std::vector<glm::vec3> &offsets,
+                                std::vector<glm::vec3> &colors) override;
+
+
 };

@@ -119,7 +119,7 @@ Chunk* Terrain::instantiateChunkAt(int x, int z) {
     uPtr<Chunk> chunk = mkU<Chunk>(mp_context, x, z);
     Chunk *cPtr = chunk.get();
     m_chunks[toKey(x, z)] = move(chunk);
-    // Set the neighbor pointers of itself and its neighbors
+    // 给新生成的chunk链接邻居+临邻居链接它
     if(hasChunkAt(x, z + 16)) {
         auto &chunkNorth = m_chunks[toKey(x, z + 16)];
         cPtr->linkNeighbor(chunkNorth, ZPOS);
@@ -146,8 +146,50 @@ void Terrain::draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shader
 
     for(int x = minX; x < maxX; x += 16) {
         for(int z = minZ; z < maxZ; z += 16) {
+            if(!hasChunkAt(x, z)) continue;       // ★ 跳过不存在的区块
             const uPtr<Chunk> &chunk = getChunkAt(x, z);
-            shaderProgram->draw(*chunk);
+            shaderProgram->drawInterleaved(*chunk);
+        }
+    }
+}
+
+void Terrain::expandTerrain(glm::vec3 playerPos) {
+    // 玩家所在区块的 min corner
+    int playerChunkX = static_cast<int>(glm::floor(playerPos.x / 16.f)) * 16;
+    int playerChunkZ = static_cast<int>(glm::floor(playerPos.z / 16.f)) * 16;
+
+    // 检查玩家区块周围的 3×3 网格（9 个位置）
+    for(int dx = -1; dx <= 1; ++dx) {
+        for(int dz = -1; dz <= 1; ++dz) {
+            int checkX = playerChunkX + dx * 16;
+            int checkZ = playerChunkZ + dz * 16;
+
+            // 已存在 → 跳过
+            if(hasChunkAt(checkX, checkZ)) continue;
+
+            // 计算玩家到"缺失区块范围"的距离（切比雪夫距离）
+            float dX = 0.f, dZ = 0.f;
+            if(playerPos.x < checkX) {
+                dX = checkX - playerPos.x;                 // 玩家在区块左边
+            } else if(playerPos.x >= checkX + 16) {
+                dX = playerPos.x - (checkX + 16);          // 玩家在区块右边
+            }
+            // else: 玩家在区块的 X 范围内 → dX = 0
+
+            if(playerPos.z < checkZ) {
+                dZ = checkZ - playerPos.z;                 // 玩家在区块上方
+            } else if(playerPos.z >= checkZ + 16) {
+                dZ = playerPos.z - (checkZ + 16);          // 玩家在区块下方
+            }
+
+            // 任一分量超过 16 格 → 还不够近，跳过
+            if(glm::max(dX, dZ) > 16.f) continue;
+
+            // ---- 生成新区块 ----
+            instantiateChunkAt(checkX, checkZ);
+            uPtr<Chunk> &newChunk = getChunkAt(checkX, checkZ);
+            // TODO: 后续可以在这里填充方块（地形生成）
+            newChunk->createVBOdata();
         }
     }
 }

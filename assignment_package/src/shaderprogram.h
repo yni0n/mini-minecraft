@@ -48,6 +48,9 @@ public:
     // Draw the given object to our screen using this ShaderProgram's shaders
     void draw(Drawable &d);
     void drawInstanced(InstancedDrawable &d);
+    void drawInterleaved(Drawable &d); //交错数据的普通绘制
+    void drawInterleavedInstanced(InstancedDrawable &d); // 交错 VBO + 实例化绘制
+
     // Utility function used in create()
     char* textFileRead(const char*); //读取shader代码转为字符串
     // Utility function that prints any shader compilation errors to the console
