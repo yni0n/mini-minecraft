@@ -12,7 +12,8 @@ MyGL::MyGL(QWidget *parent)
       m_progLambert(this), m_progFlat(this), m_progInstanced(this),
       m_terrain(this), m_player(glm::vec3(48.f, 129.f, 48.f), m_terrain),
       m_blockWireframe(this),           // ★ 新增
-      m_hasTarget(false)                // ★ 新增
+      m_hasTarget(false),                // ★ 新增
+      m_texture(0)   // ★ 初始化为 0
 {
     // Connect the timer to a function so that when the timer ticks the function is executed
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(tick()));
@@ -37,6 +38,9 @@ void MyGL::moveMouseToCenter() {
 
 void MyGL::initializeGL()
 {
+    fprintf(stderr, "=== initializeGL ===\n");//debug
+    fflush(stderr);
+
     // 激活 Qt 提供的 OpenGL 函数库， using Qt's QOpenGLFunctions_3_2_Core class
     // If you were programming in a non-Qt context you might use GLEW (GL Extension Wrangler)instead
     initializeOpenGLFunctions();
@@ -61,10 +65,10 @@ void MyGL::initializeGL()
 
     // Create and set up the diffuse shader
     m_progLambert.create(":/glsl/lambert.vert.glsl", ":/glsl/lambert.frag.glsl");
+
     // Create and set up the flat lighting shader
     m_progFlat.create(":/glsl/flat.vert.glsl", ":/glsl/flat.frag.glsl");
     m_progInstanced.create(":/glsl/instanced.vert.glsl", ":/glsl/lambert.frag.glsl");
-
 
     // We have to have a VAO bound in OpenGL 3.2 Core. But if we're not
     // using multiple VAOs, we can just bind one once.
@@ -81,6 +85,9 @@ void MyGL::initializeGL()
 
     // ★ 新增：创建描边方块 VBO
     m_blockWireframe.createVBOdata();
+
+    // ★ 新增：加载纹理
+    loadTexture();
 }
 
 //改变窗口大小就触发
@@ -156,6 +163,11 @@ void MyGL::paintGL() {
     m_progFlat.setUnifMat4("u_ViewProj", viewproj);
     m_progInstanced.setUnifMat4("u_ViewProj", viewproj);
 
+    // ★ 新增：激活纹理单元 0 并绑定纹理
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    m_progLambert.setUnifInt("u_Texture", 0);
+
     renderTerrain();//绘制地形
 
     // ★ 新增：渲染方块描边
@@ -202,6 +214,29 @@ void MyGL::renderTerrain() {
                            &m_progLambert);
         }
     }
+}
+
+// ★ 新增：纹理加载函数实现
+void MyGL::loadTexture() {
+    QImage img(":/textures/atlas.png");
+    if(img.isNull()) {
+        qDebug() << "Failed to load texture :/textures/atlas.png";
+        return;
+    }
+    img = img.convertToFormat(QImage::Format_RGBA8888).mirrored(false, true);
+    // 镜像 y 轴：OpenGL 纹理坐标原点在左下角，QImage 原点在左上角
+
+    glGenTextures(1, &m_texture);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                 img.width(), img.height(), 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, img.bits());
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
 }
 
 //控制移动旋转和加速等

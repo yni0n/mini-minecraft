@@ -98,7 +98,7 @@ void Player::computePhysics(float dT, const Terrain &terrain, InputBundle &input
 
     // ========== 3. 摩擦/空气阻力 ==========
     // pow(0.95, dt): 每秒速度保留 5%，与帧率无关
-    const float damping = 0.05f;
+    const float damping = 0.01f;
     if(m_flightMode) {
         // 飞行模式：所有轴都减速
         m_velocity *= glm::pow(damping, dT);

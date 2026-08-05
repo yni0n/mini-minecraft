@@ -1,6 +1,6 @@
 #ifndef MYGL_H
 #define MYGL_H
-
+#include <QImage>     // 顶部加
 #include "openglcontext.h"
 #include "shaderprogram.h"
 #include "scene/worldaxes.h"
@@ -39,6 +39,9 @@ private:
     BlockWireframe m_blockWireframe;
     glm::ivec3 m_targetBlock;    // 当前瞄准的方块坐标
     bool m_hasTarget;            // 当前是否有瞄准目标
+
+    GLuint m_texture;             // ★ 新增：纹理对象句柄
+    void loadTexture();           // ★ 新增：纹理加载函数
 
     void moveMouseToCenter(); // 强制把鼠标移动到屏幕正中心。 You should call this
                               // from within a mouse move event after reading the mouse movement so that

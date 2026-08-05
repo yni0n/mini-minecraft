@@ -4,6 +4,7 @@
 #include <iostream>
 #include <exception>
 #include <QDir>
+#include <cstring>
 
 
 ShaderProgram::ShaderProgram(OpenGLContext *context)
@@ -25,18 +26,27 @@ void ShaderProgram::create(const char *vertfile, const char *fragfile)
     vertShader = context->glCreateShader(GL_VERTEX_SHADER);
     fragShader = context->glCreateShader(GL_FRAGMENT_SHADER);
     prog = context->glCreateProgram();
+
     // Get the body of text stored in our two .glsl files
     QString qVertSource = qTextFileRead(vertfile);
     QString qFragSource = qTextFileRead(fragfile);
 
-    char* vertSource = new char[qVertSource.size()+1];
-    strcpy(vertSource, qVertSource.toStdString().c_str());
-    char* fragSource = new char[qFragSource.size()+1];
-    strcpy(fragSource, qFragSource.toStdString().c_str());
+    fprintf(stderr, "  create-3 v=%d f=%d\n",
+            (int)qVertSource.size(), (int)qFragSource.size());
+    fflush(stderr);//debug
+
+    QByteArray vertBytes = qVertSource.toUtf8();
+    char* vertSource = new char[vertBytes.size() + 1];
+    memcpy(vertSource, vertBytes.constData(), vertBytes.size() + 1);
+
+    QByteArray fragBytes = qFragSource.toUtf8();
+    char* fragSource = new char[fragBytes.size() + 1];
+    memcpy(fragSource, fragBytes.constData(), fragBytes.size() + 1);
 
     // Send the shader text to OpenGL and store it in the shaders specified by the handles vertShader and fragShader
     context->glShaderSource(vertShader, 1, (const char**)&vertSource, 0);
     context->glShaderSource(fragShader, 1, (const char**)&fragSource, 0);
+
     // Tell OpenGL to compile the shader text stored above
     context->glCompileShader(vertShader);
     context->glCompileShader(fragShader);
@@ -266,7 +276,7 @@ void ShaderProgram::drawInterleaved(Drawable &d) {
     useMe();
 
     d.bindBuffer(INTERLEAVED);
-    int stride = 3 * static_cast<int>(sizeof(glm::vec4));  // 48 bytes
+    int stride = 14 * static_cast<int>(sizeof(GLfloat));    // 56
 
     int handle;
 
@@ -288,6 +298,12 @@ void ShaderProgram::drawInterleaved(Drawable &d) {
         context->glVertexAttribPointer(handle, 4, GL_FLOAT, false, stride, (void*)(2 * sizeof(glm::vec4)));
     }
 
+    // ★ 新增：vs_UV → offset 48 (vec2)
+    if ((handle = m_attribs["vs_UV"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 2, GL_FLOAT, false, stride, (void*)(3 * sizeof(glm::vec4)));
+    }
+
     d.bindBuffer(INDEX);
     context->glDrawElements(d.drawMode(), d.elemCount(INDEX),
                             GL_UNSIGNED_INT, 0);
@@ -295,6 +311,7 @@ void ShaderProgram::drawInterleaved(Drawable &d) {
     if (m_attribs["vs_Pos"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Pos"]);
     if (m_attribs["vs_Nor"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Nor"]);
     if (m_attribs["vs_Col"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Col"]);
+    if (m_attribs["vs_UV"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_UV"]);
 
     context->printGLErrorLog();
 }

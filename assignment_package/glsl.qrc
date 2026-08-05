@@ -5,5 +5,6 @@
         <file>glsl/flat.frag.glsl</file>
         <file>glsl/flat.vert.glsl</file>
         <file>glsl/instanced.vert.glsl</file>
+        <file alias="textures/atlas.png">../textures/minecraft_textures_all.png</file>
     </qresource>
 </RCC>
