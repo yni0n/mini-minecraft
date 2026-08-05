@@ -4,7 +4,7 @@
 #include <iostream>
 #include <QApplication>
 #include <QKeyEvent>
-
+#include <QDateTime>
 
 MyGL::MyGL(QWidget *parent)
     : OpenGLContext(parent), //初始化列表
@@ -20,6 +20,7 @@ MyGL::MyGL(QWidget *parent)
 
     setMouseTracking(true);  // MyGL 会追踪鼠标活动即使没有按下
     setCursor(Qt::BlankCursor); // 光标不可见
+    m_prevFrameTime = QDateTime::currentMSecsSinceEpoch();   // ★ 新增
 }
 
 MyGL::~MyGL() {
@@ -73,7 +74,7 @@ void MyGL::initializeGL()
     float groundY = m_terrain.getHeightAt(
         m_player.mcr_position.x,
         m_player.mcr_position.z);
-    float deltaY = (groundY + 2.f) - m_player.mcr_position.y;
+    float deltaY = (groundY + 3.f) - m_player.mcr_position.y;
     m_player.moveUpGlobal(deltaY);       // Player 重写了此方法，相机也会同步移动
 }
 
@@ -99,7 +100,18 @@ void MyGL::resizeGL(int w, int h) {
 // all per-frame actions here, such as performing physics updates on all
 // entities in the scene.
 void MyGL::tick() {
+    // ---- 计算帧间隔 ----
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    float dT = (now - m_prevFrameTime) / 1000.f;  // 毫秒 → 秒
+    m_prevFrameTime = now;
+    dT = glm::min(dT, 0.1f);   // 防止断点调试时 dt 爆炸
+
     m_terrain.expandTerrain(m_player.mcr_position);   // ★ 新增：每帧检查
+
+    m_player.tick(dT, m_inputs);
+    m_inputs.mouseX = 0.f;
+    m_inputs.mouseY = 0.f;
+
     update(); // Calls paintGL() as part of a larger QOpenGLWidget pipeline
     sendPlayerDataToGUI(); // Updates the info in the secondary window displaying player data
 }
@@ -167,46 +179,43 @@ void MyGL::renderTerrain() {
 
 //控制移动旋转和加速等
 void MyGL::keyPressEvent(QKeyEvent *e) {
-    float amount = 2.0f;
-    if(e->modifiers() & Qt::ShiftModifier){
-        amount = 10.0f;
-    }
-    // http://doc.qt.io/qt-5/qt.html#Key-enum
-    // This could all be much more efficient if a switch
-    // statement were used, but I really dislike their
-    // syntax so I chose to be lazy and use a long
-    // chain of if statements instead
-    if (e->key() == Qt::Key_Escape) {
-        QApplication::quit();
-    } else if (e->key() == Qt::Key_Right) {
-        m_player.rotateOnUpGlobal(-amount);
-    } else if (e->key() == Qt::Key_Left) {
-        m_player.rotateOnUpGlobal(amount);
-    } else if (e->key() == Qt::Key_Up) {
-        m_player.rotateOnRightLocal(-amount);
-    } else if (e->key() == Qt::Key_Down) {
-        m_player.rotateOnRightLocal(amount);
-    } else if (e->key() == Qt::Key_W) {
-        m_player.moveForwardLocal(amount);
-    } else if (e->key() == Qt::Key_S) {
-        m_player.moveForwardLocal(-amount);
-    } else if (e->key() == Qt::Key_D) {
-        m_player.moveRightLocal(amount);
-    } else if (e->key() == Qt::Key_A) {
-        m_player.moveRightLocal(-amount);
-    } else if (e->key() == Qt::Key_Q) {
-        m_player.moveUpGlobal(-amount);
-    } else if (e->key() == Qt::Key_E) {
-        m_player.moveUpGlobal(amount);
+    switch(e->key()) {
+    case Qt::Key_Escape: QApplication::quit();  break;
+    case Qt::Key_W:     m_inputs.wPressed     = true; break;
+    case Qt::Key_A:     m_inputs.aPressed     = true; break;
+    case Qt::Key_S:     m_inputs.sPressed     = true; break;
+    case Qt::Key_D:     m_inputs.dPressed     = true; break;
+    case Qt::Key_Q:     m_inputs.qPressed     = true; break;
+    case Qt::Key_E:     m_inputs.ePressed     = true; break;
+    case Qt::Key_Space: m_inputs.spacePressed = true; break;
+    case Qt::Key_F:     m_inputs.fPressed     = true; break;
     }
 }
 
 void MyGL::keyReleaseEvent(QKeyEvent *e) {
-    ;
+    switch(e->key()) {
+    case Qt::Key_W:     m_inputs.wPressed     = false; break;
+    case Qt::Key_A:     m_inputs.aPressed     = false; break;
+    case Qt::Key_S:     m_inputs.sPressed     = false; break;
+    case Qt::Key_D:     m_inputs.dPressed     = false; break;
+    case Qt::Key_Q:     m_inputs.qPressed     = false; break;
+    case Qt::Key_E:     m_inputs.ePressed     = false; break;
+    case Qt::Key_Space: m_inputs.spacePressed = false; break;
+    case Qt::Key_F:     m_inputs.fPressed     = false; break;
+    }
 }
 
 void MyGL::mouseMoveEvent(QMouseEvent *e) {
-    // TODO
+    // ★ 过滤掉 moveMouseToCenter() 触发的合成事件
+    if(!e->spontaneous()) return;
+
+    QPoint center(width() / 2, height() / 2);
+    QPoint delta = e->pos() - center;
+
+    m_inputs.mouseX += delta.x();   // 累积本帧所有鼠标移动
+    m_inputs.mouseY += delta.y();
+
+    moveMouseToCenter();  // 鼠标锁回屏幕中央
 }
 
 void MyGL::mousePressEvent(QMouseEvent *e) {

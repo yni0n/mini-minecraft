@@ -82,9 +82,9 @@ void Chunk::createVBOdata() {
     std::vector<GLfloat> interleaved;   // 存放 pos+ nor+ col 的交错数据
     std::vector<GLuint>  indices;        // 三角形索引
 
-    for(int x = 0; x < 16; ++x) {
-        for(int z = 0; z < 16; ++z) {
-            for(int y = 0; y < 256; ++y) {
+    for(int z = 0; z < 16; ++z) {
+        for(int y = 0; y < 256; ++y) {
+            for(int x = 0; x < 16; ++x) {
 
                 BlockType curr = getLocalBlockAt(x, y, z);//遍历当前的cube
                 if(curr == EMPTY) continue;

@@ -32,6 +32,8 @@ private:
 
     QTimer m_timer; // Timer linked to tick(). 60帧/s。
 
+    qint64 m_prevFrameTime;   // ★ 新增：上一帧的时间戳（毫秒）
+
     void moveMouseToCenter(); // 强制把鼠标移动到屏幕正中心。 You should call this
                               // from within a mouse move event after reading the mouse movement so that
                               // your mouse stays within the screen bounds and is always read.

@@ -104,4 +104,7 @@ public:
     // Initializes the Chunks that store the 64 x 256 x 64 block scene you
     // see when the base code is run.
     void CreateTestScene(glm::vec3 playerPos);   // ★ 接受玩家位置
+
+    // ★ 新增：检查玩家 AABB 在给定位置是否与方块碰撞
+    bool checkPlayerCollision(glm::vec3 pos) const;
 };

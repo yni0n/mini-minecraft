@@ -3,12 +3,17 @@
 
 struct InputBundle {
     bool wPressed, aPressed, sPressed, dPressed;
+    bool qPressed, ePressed;       // ★ 新增：飞行上升/下降
     bool spacePressed;
+    bool fPressed;                 // ★ 新增：切换飞行/行走模式
     float mouseX, mouseY;
+
 
     InputBundle()
         : wPressed(false), aPressed(false), sPressed(false),
-          dPressed(false), spacePressed(false), mouseX(0.f), mouseY(0.f)
+        dPressed(false), qPressed(false), ePressed(false),
+        spacePressed(false), fPressed(false),
+        mouseX(0.f), mouseY(0.f)
     {}
 };
 

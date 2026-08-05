@@ -221,25 +221,24 @@ float Terrain::getGrasslandHeight(float x, float z) {
 
 //陡峭山
 float Terrain::getMountainHeight(float x, float z) {
-    float val = 0.f;
-    float amp = 1.f;
-    float freq = 0.003f;
-    float maxAmp = 0.f;
+    float val = 0.0;
+    float amp = 0.5;
+    float freq = 0.0005;
+    float persistence = 0.9f;
 
     for(int i = 0; i < 6; ++i) {
         float p = glm::perlin(glm::vec2(x * freq, z * freq));
-        val += amp * glm::abs(p);    // abs → 山脊效果
-        maxAmp += amp;
-        amp *= 0.5f;
-        freq *= 2.f;
+        val += amp * abs(p);    // abs → 山脊效果
+        amp *= persistence;
+        freq *= 2.0;
     }
-    return 128.f + (val / maxAmp) * 80.f;  // [128, 208]
+    return 128.f + pow(val ,1.0) * 180.f;  // [128, 308]
 }
 
 //地形属性低频噪声 + smoothstep
 float Terrain::getBiomeBlend(float x, float z) {
     // 低频 Perlin → 大片区域缓慢变化
-    float noise = glm::perlin(glm::vec2(x * 0.0008f, z * 0.0008f));
+    float noise = glm::perlin(glm::vec2(x * 0.008f, z * 0.008f));
     // 从 [-1, 1] 映射到 [0, 1]
     float t = (noise + 1.f) * 0.5f;
     // smoothstep: 在 [0.25, 0.75] 之间平滑过渡
@@ -256,12 +255,13 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
             int worldZ = startZ + z;
 
             // ---- 第一步：算三种噪声 ----
-            float grassH   = getGrasslandHeight(worldX, worldZ);
-            float mountainH = getMountainHeight(worldX, worldZ);
+            //float grassH   = getGrasslandHeight(worldX, worldZ);
+            //float mountainH = getMountainHeight(worldX, worldZ);
             float blend     = getBiomeBlend(worldX, worldZ);
 
             // ---- 第二步：线性插值得到最终高度 ----
-            float finalH = glm::mix(grassH, mountainH, blend);
+            //float finalH = glm::mix(grassH, mountainH, blend);
+            float finalH = getHeightAt(worldX, worldZ);
             int   topY   = static_cast<int>(glm::floor(finalH));
 
             // ---- 第三步：逐 Y 填充方块 ----
@@ -279,7 +279,7 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                         block = (y == topY) ? GRASS : DIRT;
                     } else {
                         // ---- 山脉区 ----
-                        block = (y == topY && y > 200) ? SNOW : STONE;
+                        block = (y == topY && y >= 200) ? SNOW : STONE;
                     }
                 }
                 else {
@@ -297,6 +297,36 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
             }
         }
     }
+}
+
+bool Terrain::checkPlayerCollision(glm::vec3 pos) const {
+    // 玩家 AABB（始终与世界轴对齐）
+    float minX = pos.x - 0.5f,  maxX = pos.x + 0.5f;
+    float minY = pos.y,         maxY = pos.y + 2.0f;
+    float minZ = pos.z - 0.5f,  maxZ = pos.z + 0.5f;
+
+    // 世界边界：不允许超出 Y 范围
+    if(minY < 0.f || maxY > 256.f) return true;
+
+    // 遍历 AABB 触碰到的所有整数方块坐标
+    // floor(max - epsilon) 防止 maxY=130.0 落到方块 Y=130 上(该方块实际不在 AABB 内)
+    for(int x = static_cast<int>(glm::floor(minX));
+         x <= static_cast<int>(glm::floor(maxX - 0.001f)); ++x) {
+        for(int y = static_cast<int>(glm::floor(minY));
+             y <= static_cast<int>(glm::floor(maxY - 0.001f)); ++y) {
+            for(int z = static_cast<int>(glm::floor(minZ));
+                 z <= static_cast<int>(glm::floor(maxZ - 0.001f)); ++z) {
+
+                // 检查 Chunk 是否存在
+                if(!hasChunkAt(x, z)) return true;   // 未生成区域 = 实心墙
+
+                // 检查方块是否为实心
+                BlockType b = getGlobalBlockAt(x, y, z);
+                if(b != EMPTY) return true;
+            }
+        }
+    }
+    return false;   // 无碰撞
 }
 
 float Terrain::getHeightAt(float x, float z) const {
