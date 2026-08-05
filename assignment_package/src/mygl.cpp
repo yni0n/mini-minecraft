@@ -10,7 +10,9 @@ MyGL::MyGL(QWidget *parent)
     : OpenGLContext(parent), //初始化列表
       m_worldAxes(this),
       m_progLambert(this), m_progFlat(this), m_progInstanced(this),
-      m_terrain(this), m_player(glm::vec3(48.f, 129.f, 48.f), m_terrain)
+      m_terrain(this), m_player(glm::vec3(48.f, 129.f, 48.f), m_terrain),
+      m_blockWireframe(this),           // ★ 新增
+      m_hasTarget(false)                // ★ 新增
 {
     // Connect the timer to a function so that when the timer ticks the function is executed
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(tick()));
@@ -76,6 +78,9 @@ void MyGL::initializeGL()
         m_player.mcr_position.z);
     float deltaY = (groundY + 3.f) - m_player.mcr_position.y;
     m_player.moveUpGlobal(deltaY);       // Player 重写了此方法，相机也会同步移动
+
+    // ★ 新增：创建描边方块 VBO
+    m_blockWireframe.createVBOdata();
 }
 
 //改变窗口大小就触发
@@ -112,6 +117,15 @@ void MyGL::tick() {
     m_inputs.mouseX = 0.f;
     m_inputs.mouseY = 0.f;
 
+    // ★ 新增：每帧射线检测，确定瞄准方块
+    glm::vec3 origin = m_player.mcr_camera.mcr_position;
+    glm::vec3 dir    = m_player.mcr_camera.mcr_forward;
+    RaycastResult result = m_terrain.raycast(origin, dir, 3.0f);
+    m_hasTarget = result.hit;
+    if(m_hasTarget) {
+        m_targetBlock = result.blockPos;
+    }
+
     update(); // Calls paintGL() as part of a larger QOpenGLWidget pipeline
     sendPlayerDataToGUI(); // Updates the info in the secondary window displaying player data
 }
@@ -143,6 +157,19 @@ void MyGL::paintGL() {
     m_progInstanced.setUnifMat4("u_ViewProj", viewproj);
 
     renderTerrain();//绘制地形
+
+    // ★ 新增：渲染方块描边
+    if(m_hasTarget) {
+        glm::mat4 model = glm::translate(glm::mat4(1.0f),
+                                         glm::vec3(m_targetBlock));
+        m_progFlat.setUnifMat4("u_Model", model);
+
+        glEnable(GL_POLYGON_OFFSET_LINE);
+        glPolygonOffset(-1.0f, -1.0f);
+        m_progFlat.draw(m_blockWireframe);
+        glPolygonOffset(0.0f, 0.0f);
+        glDisable(GL_POLYGON_OFFSET_LINE);
+    }
 
     //绘制坐标轴
     glDisable(GL_DEPTH_TEST);

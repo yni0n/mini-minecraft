@@ -7,6 +7,7 @@
 #include "scene/camera.h"
 #include "scene/terrain.h"
 #include "scene/player.h"
+#include "scene/blockwireframe.h"          // ★ 新增
 
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLShaderProgram>
@@ -33,6 +34,11 @@ private:
     QTimer m_timer; // Timer linked to tick(). 60帧/s。
 
     qint64 m_prevFrameTime;   // ★ 新增：上一帧的时间戳（毫秒）
+
+    // ★ 新增：方块描边
+    BlockWireframe m_blockWireframe;
+    glm::ivec3 m_targetBlock;    // 当前瞄准的方块坐标
+    bool m_hasTarget;            // 当前是否有瞄准目标
 
     void moveMouseToCenter(); // 强制把鼠标移动到屏幕正中心。 You should call this
                               // from within a mouse move event after reading the mouse movement so that
@@ -71,6 +77,8 @@ protected:
     // Automatically invoked when the user
     // presses a mouse button
     void mousePressEvent(QMouseEvent *e) override;
+
+    void handleBlockInteraction(QMouseEvent *e);   // ★ 新增
 
 private slots:
     void tick(); // 定时器绑定的槽函数。called ~60 times per second by m_timer firing.
