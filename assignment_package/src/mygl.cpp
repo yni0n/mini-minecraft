@@ -219,5 +219,57 @@ void MyGL::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void MyGL::mousePressEvent(QMouseEvent *e) {
-    // TODO
+    // ---- 构造射线 ----
+    glm::vec3 origin = m_player.mcr_camera.mcr_position;
+    glm::vec3 dir    = m_player.mcr_camera.mcr_forward;
+
+    RaycastResult result = m_terrain.raycast(origin, dir, 3.0f);
+
+    // ============ 左键：破坏方块 ============
+    if(e->button() == Qt::LeftButton) {
+        if(!result.hit) return;
+
+        m_terrain.setGlobalBlockAt(result.blockPos.x,
+                                   result.blockPos.y,
+                                   result.blockPos.z, EMPTY);
+
+        // 重建该 Chunk 的 VBO
+        int cx = static_cast<int>(glm::floor(
+                     result.blockPos.x / 16.f)) * 16;
+        int cz = static_cast<int>(glm::floor(
+                     result.blockPos.z / 16.f)) * 16;
+        if(m_terrain.hasChunkAt(cx, cz)) {
+            m_terrain.getChunkAt(cx, cz)->createVBOdata();
+        }
+    }
+
+    // ============ 右键：放置方块 ============
+    else if(e->button() == Qt::RightButton) {
+        if(!result.hit) return;
+
+        // 根据命中面法线计算放置位置
+        glm::ivec3 placePos = result.blockPos;
+        switch(result.faceNormal) {
+        case XPOS: placePos.x += 1; break;
+        case XNEG: placePos.x -= 1; break;
+        case YPOS: placePos.y += 1; break;
+        case YNEG: placePos.y -= 1; break;
+        case ZPOS: placePos.z += 1; break;
+        case ZNEG: placePos.z -= 1; break;
+        }
+
+        // Y 轴边界检查
+        if(placePos.y < 0 || placePos.y >= 256) return;
+
+        // 目标 Chunk 必须存在
+        int cx = static_cast<int>(glm::floor(
+                     placePos.x / 16.f)) * 16;
+        int cz = static_cast<int>(glm::floor(
+                     placePos.z / 16.f)) * 16;
+        if(!m_terrain.hasChunkAt(cx, cz)) return;
+
+        m_terrain.setGlobalBlockAt(placePos.x, placePos.y,
+                                   placePos.z, STONE);
+        m_terrain.getChunkAt(cx, cz)->createVBOdata();
+    }
 }

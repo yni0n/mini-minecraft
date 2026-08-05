@@ -27,6 +27,7 @@ protected:
 public:
     // A readonly reference to position for external use
     const glm::vec3& mcr_position;
+    const glm::vec3& mcr_forward;
 
     // Various constructors
     Entity();

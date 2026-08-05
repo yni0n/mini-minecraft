@@ -2,6 +2,7 @@
 #include "cube.h"
 #include <stdexcept>
 #include <glm/gtc/noise.hpp>
+#include <cmath>
 #include <iostream>
 
 Terrain::Terrain(OpenGLContext *context)
@@ -327,6 +328,93 @@ bool Terrain::checkPlayerCollision(glm::vec3 pos) const {
         }
     }
     return false;   // 无碰撞
+}
+
+RaycastResult Terrain::raycast(glm::vec3 origin, glm::vec3 dir, float maxDist) const {
+    RaycastResult result;
+    result.hit = false;
+    result.blockPos = glm::ivec3(0);
+    result.faceNormal = XPOS;
+
+    // ---- 起始方块 ----
+    glm::ivec3 current(
+        static_cast<int>(glm::floor(origin.x)),
+        static_cast<int>(glm::floor(origin.y)),
+        static_cast<int>(glm::floor(origin.z))
+        );
+
+    // Y 轴越界直接返回
+    if(current.y < 0 || current.y >= 256) return result;
+
+    // ---- 步进方向 ----
+    glm::ivec3 step(
+        (dir.x > 0.f) ? 1 : -1,
+        (dir.y > 0.f) ? 1 : -1,
+        (dir.z > 0.f) ? 1 : -1
+        );
+
+    // ---- tMax：到达各轴第一个边界的参数 t ----
+    glm::vec3 tMax;
+    tMax.x = (dir.x > 0.f)  ? (glm::ceil(origin.x) - origin.x) / dir.x
+             : (dir.x < 0.f)  ? (origin.x - glm::floor(origin.x)) / (-dir.x)
+                             : INFINITY;
+    tMax.y = (dir.y > 0.f)  ? (glm::ceil(origin.y) - origin.y) / dir.y
+             : (dir.y < 0.f)  ? (origin.y - glm::floor(origin.y)) / (-dir.y)
+                             : INFINITY;
+    tMax.z = (dir.z > 0.f)  ? (glm::ceil(origin.z) - origin.z) / dir.z
+             : (dir.z < 0.f)  ? (origin.z - glm::floor(origin.z)) / (-dir.z)
+                             : INFINITY;
+
+    // ---- tDelta：相邻方块边界之间的参数 t 增量 ----
+    glm::vec3 tDelta(
+        (dir.x != 0.f) ? (1.f / glm::abs(dir.x)) : INFINITY,
+        (dir.y != 0.f) ? (1.f / glm::abs(dir.y)) : INFINITY,
+        (dir.z != 0.f) ? (1.f / glm::abs(dir.z)) : INFINITY
+        );
+
+    // ---- 记录命中面法线 ----
+    Direction hitNormal = XPOS;
+
+    // ---- 主循环 ----
+    int maxIter = static_cast<int>(maxDist * 3) + 10;
+    for(int i = 0; i < maxIter; ++i) {
+        // 检查 Y 边界
+        if(current.y < 0 || current.y >= 256) break;
+
+        // 检查当前方块是否实心
+        if(hasChunkAt(current.x, current.z)) {
+            BlockType block = getGlobalBlockAt(current.x, current.y, current.z);
+            if(block != EMPTY) {
+                result.hit = true;
+                result.blockPos = current;
+                result.faceNormal = hitNormal;
+                return result;
+            }
+        }
+        // Chunk 未生成 → 视为空气，射线继续
+
+        // ---- 选择 tMax 最小的轴步进 ----
+        if(tMax.x < tMax.y && tMax.x < tMax.z) {
+            if(tMax.x > maxDist) break;
+            current.x += step.x;
+            tMax.x += tDelta.x;
+            hitNormal = (step.x > 0) ? XNEG : XPOS;
+        }
+        else if(tMax.y < tMax.z) {
+            if(tMax.y > maxDist) break;
+            current.y += step.y;
+            tMax.y += tDelta.y;
+            hitNormal = (step.y > 0) ? YNEG : YPOS;
+        }
+        else {
+            if(tMax.z > maxDist) break;
+            current.z += step.z;
+            tMax.z += tDelta.z;
+            hitNormal = (step.z > 0) ? ZNEG : ZPOS;
+        }
+    }
+
+    return result;
 }
 
 float Terrain::getHeightAt(float x, float z) const {

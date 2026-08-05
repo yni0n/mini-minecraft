@@ -15,6 +15,13 @@
 int64_t toKey(int x, int z);
 glm::ivec2 toCoords(int64_t k);
 
+
+struct RaycastResult {
+    bool hit;             // 是否命中方块
+    glm::ivec3 blockPos;  // 命中方块的坐标
+    Direction faceNormal; // 命中面的法线方向（用于确定放置位置）
+};
+
 // The container class for all of the Chunks in the game.
 // Ultimately, while Terrain will always store all Chunks,
 // not all Chunks will be drawn at any given time as the world
@@ -107,4 +114,7 @@ public:
 
     // ★ 新增：检查玩家 AABB 在给定位置是否与方块碰撞
     bool checkPlayerCollision(glm::vec3 pos) const;
+
+    //★ 新增：返回命中结果
+    RaycastResult raycast(glm::vec3 origin, glm::vec3 dir, float maxDist) const;
 };
