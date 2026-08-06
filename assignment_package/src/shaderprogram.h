@@ -49,6 +49,7 @@ public:
     void draw(Drawable &d);
     void drawInstanced(InstancedDrawable &d);
     void drawInterleaved(Drawable &d); //交错数据的普通绘制
+    void drawInterleavedTransparent(Drawable &d);   // ★ 透明方块绘制
     void drawInterleavedInstanced(InstancedDrawable &d); // 交错 VBO + 实例化绘制
 
     // Utility function used in create()

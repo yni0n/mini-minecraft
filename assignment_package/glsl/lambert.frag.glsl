@@ -13,6 +13,8 @@
 
 uniform vec4 u_Color; // The color with which to render this instance of geometry.
 uniform sampler2D u_Texture;        // ★ 新增：纹理采样器
+uniform float u_Time;           // ★ 时间 (秒)
+
 
 // These are the interpolated values out of the rasterizer, so you can't know
 // their specific values without knowing the vertices that contributed to them
@@ -27,8 +29,28 @@ out vec4 out_Col; // This is the final output color that you will see on your
 
 void main()
 {
+    vec2 animUV = v_UV;
+
+    // ★ 动画 UV（仅对 WATER/LAVA）
+    if(fs_Col.a > 0.5) {
+        float tileSize = 1.0 / 16.0;
+        float baseU = floor(v_UV.x / tileSize) * tileSize;
+        float baseV = floor(v_UV.y / tileSize) * tileSize;
+        float lu = (v_UV.x - baseU) / tileSize;
+        float lv = (v_UV.y - baseV) / tileSize;
+
+        float phase = fs_Pos.y * 3.0;              // Y 越高相位越靠前
+        float wave = sin((phase + u_Time * 2.0)) * 0.03;  // ±0.03 tile 幅度的 sin
+
+        lu = fract(lu + u_Time * 0.12 + wave);     // 基漂移 + sin 波动
+        lv = fract(lv + u_Time * 0.05);
+
+
+        animUV = vec2(baseU + lu * tileSize, baseV + lv * tileSize);
+    }
+
     // Material base color (before shading)
-    vec4 diffuseColor = texture(u_Texture, v_UV);
+    vec4 diffuseColor = texture(u_Texture, animUV);
 
     // Add black lines between blocks (REMOVE WHEN YOU APPLY TEXTURES)
     // bool xBound = fract(fs_Pos.x) < 0.0125 || fract(fs_Pos.x) > 0.9875;

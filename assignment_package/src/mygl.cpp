@@ -52,6 +52,9 @@ void MyGL::initializeGL()
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_CULL_FACE);
     glFrontFace(GL_CW);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     // Set the color with which the screen is filled at the start of each render call.
     glClearColor(0.37f, 0.74f, 1.0f, 1);
 
@@ -133,6 +136,8 @@ void MyGL::tick() {
         m_targetBlock = result.blockPos;
     }
 
+    m_elapsedTime += dT;//时间累计防止精度问题
+
     update(); // Calls paintGL() as part of a larger QOpenGLWidget pipeline
     sendPlayerDataToGUI(); // Updates the info in the secondary window displaying player data
 }
@@ -163,17 +168,15 @@ void MyGL::paintGL() {
     m_progFlat.setUnifMat4("u_ViewProj", viewproj);
     m_progInstanced.setUnifMat4("u_ViewProj", viewproj);
 
-    // ★ 新增：激活纹理单元 0 并绑定纹理
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_texture);
-    m_progLambert.setUnifInt("u_Texture", 0);
-
     renderTerrain();//绘制地形
 
     // ★ 新增：渲染方块描边
     if(m_hasTarget) {
-        glm::mat4 model = glm::translate(glm::mat4(1.0f),
-                                         glm::vec3(m_targetBlock));
+        // 新：先平移再微缩放，原点在方块中心
+        glm::vec3 center = glm::vec3(m_targetBlock) + glm::vec3(0.5f);
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), center)
+                          * glm::scale(glm::mat4(1.0f), glm::vec3(1.004f))
+                          * glm::translate(glm::mat4(1.0f), glm::vec3(-0.5f));
         m_progFlat.setUnifMat4("u_Model", model);
 
         glEnable(GL_POLYGON_OFFSET_LINE);
@@ -195,6 +198,12 @@ void MyGL::paintGL() {
 // for more info)
 //指定区域并绘制，使用实例绘制
 void MyGL::renderTerrain() {
+    // ★ 新增：激活纹理单元 0 并绑定纹理
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    m_progLambert.setUnifInt("u_Texture", 0);
+    m_progLambert.setUnifFloat("u_Time", m_elapsedTime);
+
     //m_terrain.draw(0, 64, 0, 64, &m_progInstanced);
     // 玩家所在的 64×64 区域左下角，需要渲染玩家周围的9个Zone
     int playerZoneX = static_cast<int>(glm::floor(
@@ -214,6 +223,21 @@ void MyGL::renderTerrain() {
                            &m_progLambert);
         }
     }
+
+    // ========== 2. 绘制透明方块（Alpha 混合） ==========
+    glDepthMask(GL_FALSE);   // 透明物体不写深度
+
+    for(int dx = -1; dx <= 1; ++dx) {
+        for(int dz = -1; dz <= 1; ++dz) {
+            int zoneX = playerZoneX + dx * 64;
+            int zoneZ = playerZoneZ + dz * 64;
+            m_terrain.drawTransparent(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
+                                      &m_progLambert);
+        }
+    }
+
+    glDepthMask(GL_TRUE);
+
 }
 
 // ★ 新增：纹理加载函数实现

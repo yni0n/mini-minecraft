@@ -4,6 +4,11 @@
 static const int ATLAS_ROWS = 16;     // 图集行数（纵向）
 static const int ATLAS_COLS = 16;     // 图集列数（横向）
 
+// ★ 透明方块判定
+static bool isOpaque(BlockType t) {
+    return t != EMPTY && t != WATER;
+}
+
 // ============== 6 个面的数据定义（顶点顺序 UR/LR/LL/UL，与 Cube 一致） ==============
 struct FaceData {
     Direction dir;
@@ -50,8 +55,8 @@ static const std::array<glm::ivec2, 6> BLOCK_FACE_ATLAS[] = {
      glm::ivec2(0,1), glm::ivec2(0,1), glm::ivec2(0,1) },
 
     // [4] WATER
-    { glm::ivec2(0,14), glm::ivec2(0,14), glm::ivec2(0,14),
-     glm::ivec2(0,14), glm::ivec2(0,14), glm::ivec2(0,14) },
+    { glm::ivec2(13,14), glm::ivec2(13,14), glm::ivec2(13,14),
+     glm::ivec2(13,14), glm::ivec2(13,14), glm::ivec2(13,14) },
 
     // [5] SNOW
     { glm::ivec2(4,2), glm::ivec2(4,2), glm::ivec2(4,2),
@@ -89,15 +94,16 @@ static const FaceData faceDefs[6] = {//面的数据
 
 // ============== 方块类型 → 颜色 ==============
 static glm::vec4 blockColor(BlockType t) {
+    float anim = (t == WATER || t == LAVA) ? 1.0f : 0.0f;  // ★ alpha=1 表示需要动画
     switch(t) {
-    case GRASS: return glm::vec4( 95.f/255, 159.f/255,  53.f/255, 1.f);
-    case DIRT:  return glm::vec4(121.f/255,  85.f/255,  58.f/255, 1.f);
-    case STONE: return glm::vec4(0.5f, 0.5f, 0.5f, 1.f);
-    case WATER: return glm::vec4(0.f, 0.f, 0.75f, 1.f);
-    case SNOW:  return glm::vec4(1.f, 1.f, 1.f, 1.f);
-    case LAVA:    return glm::vec4(1.f, 0.4f, 0.f, 1.f);   // ★ 新增
-    case BEDROCK: return glm::vec4(0.2f, 0.2f, 0.2f, 1.f); // ★ 新增
-    default:    return glm::vec4(1.f, 0.f, 1.f, 1.f);   // debug 紫色
+    case GRASS: return glm::vec4( 95.f/255, 159.f/255,  53.f/255, anim);
+    case DIRT:  return glm::vec4(121.f/255,  85.f/255,  58.f/255, anim);
+    case STONE: return glm::vec4(0.5f, 0.5f, 0.5f, anim);
+    case WATER: return glm::vec4(0.f, 0.f, 0.75f, anim);
+    case SNOW:  return glm::vec4(1.f, 1.f, 1.f, anim);
+    case LAVA:  return glm::vec4(1.f, 0.4f, 0.f, anim);
+    case BEDROCK: return glm::vec4(0.2f, 0.2f, 0.2f, anim);
+    default:    return glm::vec4(1.f, 0.f, 1.f, anim);
     }
 }
 
@@ -140,8 +146,8 @@ void Chunk::linkNeighbor(uPtr<Chunk> &neighbor, Direction dir) {
 
 // ============== 面剔除交错 VBO 生成 ==============
 void Chunk::createVBOdata() {
-    std::vector<GLfloat> interleaved;   // 存放 pos+ nor+ col 的交错数据
-    std::vector<GLuint>  indices;        // 三角形索引
+    std::vector<GLfloat> opaqueData, transparentData;   // 存放 pos+ nor+ col 的交错数据
+    std::vector<GLuint>  opaqueIdx,   transparentIdx;    // 三角形索引
 
     for(int z = 0; z < 16; ++z) {
         for(int y = 0; y < 256; ++y) {
@@ -159,17 +165,17 @@ void Chunk::createVBOdata() {
 
                     switch(fd.dir) { //如果在边界则视为空气
                     case XPOS:
-                        if(x == 15) {//边界
-                            auto it = m_neighbors.find(XPOS);//获取该方向的邻居chunk
-                            adj = (it != m_neighbors.end() && it->second)
-                                      ? it->second->getLocalBlockAt(0, y, z) : EMPTY;
+                        if(x == 15) {
+                            auto it = m_neighbors.find(XPOS);
+                            if(it == m_neighbors.end() || !it->second) continue;  // 跳过面
+                            adj = it->second->getLocalBlockAt(0, y, z);
                         } else adj = getLocalBlockAt(x+1, y, z);
                         break;
                     case XNEG:
                         if(x == 0) {
                             auto it = m_neighbors.find(XNEG);
-                            adj = (it != m_neighbors.end() && it->second)
-                                      ? it->second->getLocalBlockAt(15, y, z) : EMPTY;
+                            if(it == m_neighbors.end() || !it->second) continue;
+                            adj = it->second->getLocalBlockAt(15, y, z);
                         } else adj = getLocalBlockAt(x-1, y, z);
                         break;
                     case YPOS:
@@ -181,24 +187,30 @@ void Chunk::createVBOdata() {
                     case ZPOS:
                         if(z == 15) {
                             auto it = m_neighbors.find(ZPOS);
-                            adj = (it != m_neighbors.end() && it->second)
-                                      ? it->second->getLocalBlockAt(x, y, 0) : EMPTY;
+                            if(it == m_neighbors.end() || !it->second) continue;
+                            adj = it->second->getLocalBlockAt(x, y, 0);
                         } else adj = getLocalBlockAt(x, y, z+1);
                         break;
                     case ZNEG:
                         if(z == 0) {
                             auto it = m_neighbors.find(ZNEG);
-                            adj = (it != m_neighbors.end() && it->second)
-                                      ? it->second->getLocalBlockAt(x, y, 15) : EMPTY;
+                            if(it == m_neighbors.end() || !it->second) continue;
+                            adj = it->second->getLocalBlockAt(x, y, 15);
                         } else adj = getLocalBlockAt(x, y, z-1);
                         break;
                     }
 
-                    // 邻块不是空气 → 该面被遮挡，跳过
-                    if(adj != EMPTY) continue;
+                    // ★ 新面剔除：透明度不同才渲染/遇到空气必渲染
+                    bool currOp = isOpaque(curr);
+                    if(adj != EMPTY && !(isOpaque(curr) && !isOpaque(adj))) continue;
+
+
+                    // ★ 根据透明度选数组
+                    std::vector<GLfloat>& targetData = currOp ? opaqueData : transparentData;
+                    std::vector<GLuint>&  targetIdx  = currOp ? opaqueIdx   : transparentIdx;
 
                     // 生成该面的 4 个顶点 + 6 个索引，每顶点 14 个 float
-                    GLuint baseIdx = static_cast<GLuint>(interleaved.size() / 14);
+                    GLuint baseIdx = static_cast<GLuint>(targetData.size() / 14);
                     glm::vec4 col = blockColor(curr);
 
                     // ★ 从图集查表获取该方块该面的纹理格子
@@ -217,48 +229,65 @@ void Chunk::createVBOdata() {
                     for(int v = 0; v < 4; ++v) {
                         glm::vec4 pos = glm::vec4(worldBase + fd.corners[v], 1.0f);
                         // 每个顶点 12 个 float：pos(4) + nor(4) + col(4)
-                        interleaved.push_back(pos.x);
-                        interleaved.push_back(pos.y);
-                        interleaved.push_back(pos.z);
-                        interleaved.push_back(pos.w);
-                        interleaved.push_back(fd.normal.x);
-                        interleaved.push_back(fd.normal.y);
-                        interleaved.push_back(fd.normal.z);
-                        interleaved.push_back(fd.normal.w);
-                        interleaved.push_back(col.r);
-                        interleaved.push_back(col.g);
-                        interleaved.push_back(col.b);
-                        interleaved.push_back(col.a);
-                        // ★ 新增：UV
-                        interleaved.push_back(uvs[v].x);
-                        interleaved.push_back(uvs[v].y);
+                        targetData.push_back(pos.x);
+                        targetData.push_back(pos.y);
+                        targetData.push_back(pos.z);
+                        targetData.push_back(pos.w);
+                        targetData.push_back(fd.normal.x);
+                        targetData.push_back(fd.normal.y);
+                        targetData.push_back(fd.normal.z);
+                        targetData.push_back(fd.normal.w);
+                        targetData.push_back(col.r);
+                        targetData.push_back(col.g);
+                        targetData.push_back(col.b);
+                        targetData.push_back(col.a);
+                        targetData.push_back(uvs[v].x);
+                        targetData.push_back(uvs[v].y);
                     }
 
-                    indices.push_back(baseIdx);
-                    indices.push_back(baseIdx + 1);
-                    indices.push_back(baseIdx + 2);
-                    indices.push_back(baseIdx);
-                    indices.push_back(baseIdx + 2);
-                    indices.push_back(baseIdx + 3);
+                    // // 在 targetIdx.push_back 之前加
+                    // if(!currOp) {   // 只追踪透明方块
+                    //     fprintf(stderr, "WATER FACE: chunk(%d,%d) block(%d,%d,%d) dir=%d adj=%d\n",
+                    //             minX, minZ, x, y, z, f, (int)adj);
+                    //     fflush(stderr);
+                    // }//debug
+
+                    targetIdx.push_back(baseIdx);
+                    targetIdx.push_back(baseIdx + 1);
+                    targetIdx.push_back(baseIdx + 2);
+                    targetIdx.push_back(baseIdx);
+                    targetIdx.push_back(baseIdx + 2);
+                    targetIdx.push_back(baseIdx + 3);
                 }
             }
         }
     }
 
-    // ---- 上传 GPU ----
-    indexCounts[INDEX] = static_cast<int>(indices.size());
-
+    // ---- 上传不透明 VBO ----
+    indexCounts[INDEX] = static_cast<int>(opaqueIdx.size());
     generateBuffer(INDEX);
     bindBuffer(INDEX);
     mp_context->glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                             indices.size() * sizeof(GLuint),
-                             indices.data(), GL_STATIC_DRAW);
-
+                             opaqueIdx.size() * sizeof(GLuint),
+                             opaqueIdx.data(), GL_STATIC_DRAW);
     generateBuffer(INTERLEAVED);
     bindBuffer(INTERLEAVED);
     mp_context->glBufferData(GL_ARRAY_BUFFER,
-                             interleaved.size() * sizeof(GLfloat),
-                             interleaved.data(), GL_STATIC_DRAW);
+                             opaqueData.size() * sizeof(GLfloat),
+                             opaqueData.data(), GL_STATIC_DRAW);
+
+    // ---- 上传透明 VBO ----
+    indexCounts[INDEX_TRANSPARENT] = static_cast<int>(transparentIdx.size());
+    generateBuffer(INDEX_TRANSPARENT);
+    bindBuffer(INDEX_TRANSPARENT);
+    mp_context->glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                             transparentIdx.size() * sizeof(GLuint),
+                             transparentIdx.data(), GL_STATIC_DRAW);
+    generateBuffer(INTERLEAVED_TRANSPARENT);
+    bindBuffer(INTERLEAVED_TRANSPARENT);
+    mp_context->glBufferData(GL_ARRAY_BUFFER,
+                             transparentData.size() * sizeof(GLfloat),
+                             transparentData.data(), GL_STATIC_DRAW);
 }
 
 // ============== InstancedDrawable 纯虚函数占位 ==============

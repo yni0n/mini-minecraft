@@ -31,10 +31,6 @@ void ShaderProgram::create(const char *vertfile, const char *fragfile)
     QString qVertSource = qTextFileRead(vertfile);
     QString qFragSource = qTextFileRead(fragfile);
 
-    fprintf(stderr, "  create-3 v=%d f=%d\n",
-            (int)qVertSource.size(), (int)qFragSource.size());
-    fflush(stderr);//debug
-
     QByteArray vertBytes = qVertSource.toUtf8();
     char* vertSource = new char[vertBytes.size() + 1];
     memcpy(vertSource, vertBytes.constData(), vertBytes.size() + 1);
@@ -307,6 +303,43 @@ void ShaderProgram::drawInterleaved(Drawable &d) {
     d.bindBuffer(INDEX);
     context->glDrawElements(d.drawMode(), d.elemCount(INDEX),
                             GL_UNSIGNED_INT, 0);
+
+    if (m_attribs["vs_Pos"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Pos"]);
+    if (m_attribs["vs_Nor"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Nor"]);
+    if (m_attribs["vs_Col"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Col"]);
+    if (m_attribs["vs_UV"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_UV"]);
+
+    context->printGLErrorLog();
+}
+
+void ShaderProgram::drawInterleavedTransparent(Drawable &d) {
+    if(d.elemCount(INDEX_TRANSPARENT) <= 0) return;  // 无透明面则跳过
+
+    useMe();
+
+    d.bindBuffer(INTERLEAVED_TRANSPARENT);
+    int stride = 14 * static_cast<int>(sizeof(GLfloat));
+
+    int handle;
+    if ((handle = m_attribs["vs_Pos"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false, stride, (void*)0);
+    }
+    if ((handle = m_attribs["vs_Nor"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false, stride, (void*)sizeof(glm::vec4));
+    }
+    if ((handle = m_attribs["vs_Col"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 4, GL_FLOAT, false, stride, (void*)(2 * sizeof(glm::vec4)));
+    }
+    if ((handle = m_attribs["vs_UV"]) != -1) {
+        context->glEnableVertexAttribArray(handle);
+        context->glVertexAttribPointer(handle, 2, GL_FLOAT, false, stride, (void*)(3 * sizeof(glm::vec4)));
+    }
+
+    d.bindBuffer(INDEX_TRANSPARENT);
+    context->glDrawElements(d.drawMode(), d.elemCount(INDEX_TRANSPARENT), GL_UNSIGNED_INT, 0);
 
     if (m_attribs["vs_Pos"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Pos"]);
     if (m_attribs["vs_Nor"] != -1) context->glDisableVertexAttribArray(m_attribs["vs_Nor"]);

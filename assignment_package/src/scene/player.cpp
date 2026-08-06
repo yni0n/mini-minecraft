@@ -85,7 +85,7 @@ void Player::computePhysics(float dT, const Terrain &terrain, InputBundle &input
         float groundY = mcr_terrain.getHeightAt(m_position.x, m_position.z);
         // printf("JUMP! foot=%.3f ground=%.3f vy=%.3f\n",
         //        m_position.y, groundY + 1.0f, m_velocity.y);
-        m_acceleration.y += 300.0f;
+        m_acceleration.y += 500.0f;
     }
 
     // ========== 1. 加速度 → 速度 ==========

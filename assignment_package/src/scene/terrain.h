@@ -96,7 +96,7 @@ public:
     // described by the min and max coords, using the provided
     // ShaderProgram
     void draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram);
-
+    void drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram);
     // ★ 新增：根据玩家位置检查并扩展地形
     void expandTerrain(glm::vec3 playerPos);
     // ★ 新增：地形生成

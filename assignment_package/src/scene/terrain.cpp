@@ -155,6 +155,16 @@ void Terrain::draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shader
     }
 }
 
+void Terrain::drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram) {
+    for(int x = minX; x < maxX; x += 16) {
+        for(int z = minZ; z < maxZ; z += 16) {
+            if(!hasChunkAt(x, z)) continue;
+            const uPtr<Chunk> &chunk = getChunkAt(x, z);
+            shaderProgram->drawInterleavedTransparent(*chunk);
+        }
+    }
+}
+
 void Terrain::expandTerrain(glm::vec3 playerPos) {
     // 玩家所在区块的 min corner
     int playerChunkX = static_cast<int>(glm::floor(playerPos.x / 16.f)) * 16;
@@ -192,6 +202,20 @@ void Terrain::expandTerrain(glm::vec3 playerPos) {
             uPtr<Chunk> &newChunk = getChunkAt(checkX, checkZ);
             fillChunkWithTerrain(newChunk.get(), checkX, checkZ);  // ★ 填充噪声地形
             newChunk->createVBOdata();
+
+            // ★ 重建相邻已有 Chunk 的 VBO，确保跨 Chunk 面剔除正确
+            static const std::pair<int, int> neighborOffsets[] = {
+                { 16,  0},   // XPOS 邻居
+                {-16,  0},   // XNEG 邻居
+                {  0, 16},   // ZPOS 邻居
+                {  0,-16},   // ZNEG 邻居
+            };
+            for(auto [dx, dz] : neighborOffsets) {
+                int nx = checkX + dx, nz = checkZ + dz;
+                if(hasChunkAt(nx, nz)) {
+                    getChunkAt(nx, nz)->createVBOdata();
+                }
+            }
         }
     }
 
@@ -323,7 +347,7 @@ bool Terrain::checkPlayerCollision(glm::vec3 pos) const {
 
                 // 检查方块是否为实心
                 BlockType b = getGlobalBlockAt(x, y, z);
-                if(b != EMPTY) return true;
+                if(b != EMPTY && b != WATER && b != LAVA ) return true;
             }
         }
     }
@@ -481,16 +505,29 @@ void Terrain::CreateTestScene(glm::vec3 playerPos)
 
     // ★ 放完所有方块后，统一构建每个 Chunk 的 VBO
     // ---- 对所有新创建的 Chunk 填充地形并构建 VBO ----
+    // ★ 第一步：先填地形（所有 Chunk 的方块数据就位）
     for(int dz = -1; dz <= 1; ++dz) {
         for(int dx = -1; dx <= 1; ++dx) {
             int zoneX = playerZoneX + dx * 64;
             int zoneZ = playerZoneZ + dz * 64;
-
             for(int cx = 0; cx < 64; cx += 16) {
                 for(int cz = 0; cz < 64; cz += 16) {
                     uPtr<Chunk> &c = getChunkAt(zoneX + cx, zoneZ + cz);
-                    fillChunkWithTerrain(c.get(), zoneX + cx, zoneZ + cz );   // 噪声填充
-                    c->createVBOdata();               // 构建 VBO
+                    fillChunkWithTerrain(c.get(), zoneX + cx, zoneZ + cz);
+                }
+            }
+        }
+    }
+
+    // ★ 第二步：再统一构建 VBO（此时所有邻居的方块数据都是正确的）
+    for(int dz = -1; dz <= 1; ++dz) {
+        for(int dx = -1; dx <= 1; ++dx) {
+            int zoneX = playerZoneX + dx * 64;
+            int zoneZ = playerZoneZ + dz * 64;
+            for(int cx = 0; cx < 64; cx += 16) {
+                for(int cz = 0; cz < 64; cz += 16) {
+                    uPtr<Chunk> &c = getChunkAt(zoneX + cx, zoneZ + cz);
+                    c->createVBOdata();
                 }
             }
         }
