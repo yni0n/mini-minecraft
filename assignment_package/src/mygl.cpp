@@ -225,6 +225,7 @@ void MyGL::renderTerrain() {
     }
 
     // ========== 2. 绘制透明方块（Alpha 混合） ==========
+    //glDisable(GL_CULL_FACE);   // ← 新增：液体面从内部也能看见
     glDepthMask(GL_FALSE);   // 透明物体不写深度
 
     for(int dx = -1; dx <= 1; ++dx) {
@@ -237,7 +238,7 @@ void MyGL::renderTerrain() {
     }
 
     glDepthMask(GL_TRUE);
-
+    //glEnable(GL_CULL_FACE);    // ← 新增：恢复面剔除
 }
 
 // ★ 新增：纹理加载函数实现
@@ -355,7 +356,7 @@ void MyGL::mousePressEvent(QMouseEvent *e) {
         if(!m_terrain.hasChunkAt(cx, cz)) return;
 
         m_terrain.setGlobalBlockAt(placePos.x, placePos.y,
-                                   placePos.z, STONE);
+                                   placePos.z, LAVA);
         m_terrain.getChunkAt(cx, cz)->createVBOdata();
     }
 }

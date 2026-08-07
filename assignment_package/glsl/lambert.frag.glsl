@@ -62,6 +62,10 @@ void main()
 
     // Calculate the diffuse term for Lambert shading
     float diffuseTerm = dot(normalize(fs_Nor), normalize(fs_LightVec));
+    // ★ 液体面双面光照：反面法线取反后，用 abs 确保两侧亮度一致
+    if(fs_Col.a > 0.5) {
+        diffuseTerm = abs(diffuseTerm);
+    }
     // Avoid negative lighting values
     diffuseTerm = clamp(diffuseTerm, 0, 1);
 

@@ -200,64 +200,116 @@ void Chunk::createVBOdata() {
                         break;
                     }
 
-                    // ★ 新面剔除：透明度不同才渲染/遇到空气必渲染
+                    // ========== 面剔除（仅控制正面） ==========
                     bool currOp = isOpaque(curr);
-                    if(adj != EMPTY && !(isOpaque(curr) && !isOpaque(adj))) continue;
+                    bool renderFront = true;
 
+                    if(adj != EMPTY) {
+                        // 同种液体相邻 → 不画面（液体视为一个整体）
+                        if(curr == adj && (curr == WATER || curr == LAVA))
+                            renderFront = false;
+                        // 不透明→不透明 → 不画面（标准方块剔除）
+                        else if(currOp && isOpaque(adj))
+                            renderFront = false;
+                        // 透明→不透明 → 不画面（水不朝石头画面）
+                        else if(!currOp && isOpaque(adj))
+                            renderFront = false;
+                    }
 
-                    // ★ 根据透明度选数组
-                    std::vector<GLfloat>& targetData = currOp ? opaqueData : transparentData;
-                    std::vector<GLuint>&  targetIdx  = currOp ? opaqueIdx   : transparentIdx;
-
-                    // 生成该面的 4 个顶点 + 6 个索引，每顶点 14 个 float
-                    GLuint baseIdx = static_cast<GLuint>(targetData.size() / 14);
+                    // 提前计算共用数据（反面也会用到）
                     glm::vec4 col = blockColor(curr);
-
-                    // ★ 从图集查表获取该方块该面的纹理格子
                     glm::ivec2 atlasCell = BLOCK_FACE_ATLAS[curr][f];
                     float u0, v0, u1, v1;
                     atlasToUV(atlasCell.x, atlasCell.y, u0, v0, u1, v1);
-
-                    // 四个顶点的 UV（顺序：TL/TR/BR/BL，与 corners 一致）
                     glm::vec2 uvs[4] = {
-                        glm::vec2(u0, v1),   // top-left
-                        glm::vec2(u1, v1),   // top-right
-                        glm::vec2(u1, v0),   // bottom-right
-                        glm::vec2(u0, v0)    // bottom-left
+                        glm::vec2(u0, v1),
+                        glm::vec2(u1, v1),
+                        glm::vec2(u1, v0),
+                        glm::vec2(u0, v0)
                     };
 
-                    for(int v = 0; v < 4; ++v) {
-                        glm::vec4 pos = glm::vec4(worldBase + fd.corners[v], 1.0f);
-                        // 每个顶点 12 个 float：pos(4) + nor(4) + col(4)
-                        targetData.push_back(pos.x);
-                        targetData.push_back(pos.y);
-                        targetData.push_back(pos.z);
-                        targetData.push_back(pos.w);
-                        targetData.push_back(fd.normal.x);
-                        targetData.push_back(fd.normal.y);
-                        targetData.push_back(fd.normal.z);
-                        targetData.push_back(fd.normal.w);
-                        targetData.push_back(col.r);
-                        targetData.push_back(col.g);
-                        targetData.push_back(col.b);
-                        targetData.push_back(col.a);
-                        targetData.push_back(uvs[v].x);
-                        targetData.push_back(uvs[v].y);
+                    // ========== 渲染正面 ==========
+                    if(renderFront) {
+                        std::vector<GLfloat>& targetData = currOp ? opaqueData : transparentData;
+                        std::vector<GLuint>&  targetIdx  = currOp ? opaqueIdx   : transparentIdx;
+
+                        GLuint baseIdx = static_cast<GLuint>(targetData.size() / 14);
+
+                        for(int v = 0; v < 4; ++v) {
+                            glm::vec4 pos = glm::vec4(worldBase + fd.corners[v], 1.0f);
+                            targetData.push_back(pos.x);
+                            targetData.push_back(pos.y);
+                            targetData.push_back(pos.z);
+                            targetData.push_back(pos.w);
+                            targetData.push_back(fd.normal.x);
+                            targetData.push_back(fd.normal.y);
+                            targetData.push_back(fd.normal.z);
+                            targetData.push_back(fd.normal.w);
+                            targetData.push_back(col.r);
+                            targetData.push_back(col.g);
+                            targetData.push_back(col.b);
+                            targetData.push_back(col.a);
+                            targetData.push_back(uvs[v].x);
+                            targetData.push_back(uvs[v].y);
+                        }
+
+                        targetIdx.push_back(baseIdx);
+                        targetIdx.push_back(baseIdx + 1);
+                        targetIdx.push_back(baseIdx + 2);
+                        targetIdx.push_back(baseIdx);
+                        targetIdx.push_back(baseIdx + 2);
+                        targetIdx.push_back(baseIdx + 3);
                     }
 
-                    // // 在 targetIdx.push_back 之前加
-                    // if(!currOp) {   // 只追踪透明方块
-                    //     fprintf(stderr, "WATER FACE: chunk(%d,%d) block(%d,%d,%d) dir=%d adj=%d\n",
-                    //             minX, minZ, x, y, z, f, (int)adj);
-                    //     fflush(stderr);
-                    // }//debug
+                    // ========== 液体反面（从内部看可见） ==========
+                    // LAVA：朝任何非LAVA方块都生成反面 → 写入不透明 VBO
+                    // WATER：仅朝空气生成反面 → 写入透明 VBO
+                    bool needBackFace = false;
+                    bool backIsOpaque = false;  // 反面进哪个 VBO
 
-                    targetIdx.push_back(baseIdx);
-                    targetIdx.push_back(baseIdx + 1);
-                    targetIdx.push_back(baseIdx + 2);
-                    targetIdx.push_back(baseIdx);
-                    targetIdx.push_back(baseIdx + 2);
-                    targetIdx.push_back(baseIdx + 3);
+                    if(curr == LAVA && adj != LAVA) {
+                        needBackFace = true;
+                        backIsOpaque = true;      // 岩浆反面进不透明 VBO
+                    } else if(curr == WATER && adj == EMPTY) {
+                        needBackFace = true;
+                        backIsOpaque = false;     // 水反面进透明 VBO
+                    }
+
+                    if(needBackFace) {
+                        std::vector<GLfloat>& backData = backIsOpaque ? opaqueData : transparentData;
+                        std::vector<GLuint>&  backIdx  = backIsOpaque ? opaqueIdx   : transparentIdx;
+
+                        glm::vec4 revNormal = glm::vec4(
+                            -fd.normal.x, -fd.normal.y, -fd.normal.z, fd.normal.w);
+
+                        GLuint revBaseIdx = static_cast<GLuint>(backData.size() / 14);
+
+                        for(int v = 0; v < 4; ++v) {
+                            glm::vec4 pos = glm::vec4(worldBase + fd.corners[v], 1.0f);
+                            backData.push_back(pos.x);
+                            backData.push_back(pos.y);
+                            backData.push_back(pos.z);
+                            backData.push_back(pos.w);
+                            backData.push_back(revNormal.x);
+                            backData.push_back(revNormal.y);
+                            backData.push_back(revNormal.z);
+                            backData.push_back(revNormal.w);
+                            backData.push_back(col.r);
+                            backData.push_back(col.g);
+                            backData.push_back(col.b);
+                            backData.push_back(col.a);
+                            backData.push_back(uvs[v].x);
+                            backData.push_back(uvs[v].y);
+                        }
+
+                        // 反面索引：反转绕序
+                        backIdx.push_back(revBaseIdx);
+                        backIdx.push_back(revBaseIdx + 2);
+                        backIdx.push_back(revBaseIdx + 1);
+                        backIdx.push_back(revBaseIdx);
+                        backIdx.push_back(revBaseIdx + 3);
+                        backIdx.push_back(revBaseIdx + 2);
+                    }
                 }
             }
         }
