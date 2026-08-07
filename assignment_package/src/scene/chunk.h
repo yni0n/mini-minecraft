@@ -6,7 +6,7 @@
 #include <cstddef>
 #include "drawable.h"
 
-
+struct ChunkVBOData;
 //using namespace std;
 
 // C++ 11 allows us to define the size of an enum. This lets us use only one byte
@@ -56,6 +56,14 @@ private:
     // These allow us to properly determine
     std::unordered_map<Direction, Chunk*, EnumHash> m_neighbors;
 
+    bool m_vboReady = false;//当前chunk的VBO是否就绪
+
+    // ★ 面剔除循环（公共逻辑，被 createVBOdata 和 computeVBOData 共享）
+    void buildVBOData(std::vector<GLfloat>& opaqueData,
+                      std::vector<GLuint>&  opaqueIdx,
+                      std::vector<GLfloat>& transparentData,
+                      std::vector<GLuint>&  transparentIdx) const;
+
 public:
     Chunk(OpenGLContext* context, int x, int z);
     BlockType getLocalBlockAt(unsigned int x, unsigned int y, unsigned int z) const;
@@ -68,5 +76,17 @@ public:
     void createInstancedVBOdata(std::vector<glm::vec3> &offsets,
                                 std::vector<glm::vec3> &colors) override;
 
-
+    bool hasVBO() const { return m_vboReady; }
+    void setVBOReady(bool ready) { m_vboReady = ready; }
+    // 供 VBOWorker 读取方块数据
+    const std::array<BlockType, 65536>& blocks() const { return m_blocks; }
+    int getMinX() const { return minX; }       // ← 新增
+    int getMinZ() const { return minZ; }       // ← 新增
+    void uploadVBOData(const std::vector<GLfloat>&, const std::vector<GLuint>&,
+                       const std::vector<GLfloat>&, const std::vector<GLuint>&);  // ← 新增
+    // ★ 纯 CPU 计算 VBO 数据（子线程安全，不调 OpenGL）
+    void computeVBOData(std::vector<GLfloat>& opaqueData,
+                        std::vector<GLuint>&  opaqueIdx,
+                        std::vector<GLfloat>& transparentData,
+                        std::vector<GLuint>&  transparentIdx) const;
 };

@@ -121,7 +121,8 @@ void MyGL::tick() {
     m_prevFrameTime = now;
     dT = glm::min(dT, 0.1f);   // 防止断点调试时 dt 爆炸
 
-    m_terrain.expandTerrain(m_player.mcr_position);   // ★ 新增：每帧检查
+    //m_terrain.expandTerrain(m_player.mcr_position);   // ★ 新增：每帧检查
+    m_terrain.tick(m_player.mcr_position);
 
     m_player.tick(dT, m_inputs);
     m_inputs.mouseX = 0.f;

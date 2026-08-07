@@ -3,6 +3,7 @@
 #include "glm_includes.h"
 #include "chunk.h"
 #include <array>
+#include <QMutex>
 #include <unordered_map>
 #include <unordered_set>
 #include "shaderprogram.h"
@@ -15,6 +16,14 @@
 int64_t toKey(int x, int z);
 glm::ivec2 toCoords(int64_t k);
 
+// VBOWorker 的输出：准备好上传的 VBO 数据
+struct ChunkVBOData {
+    int chunkX, chunkZ;
+    std::vector<GLfloat> opaqueData;
+    std::vector<GLuint>  opaqueIdx;
+    std::vector<GLfloat> transparentData;
+    std::vector<GLuint>  transparentIdx;
+};
 
 struct RaycastResult {
     bool hit;             // 是否命中方块
@@ -64,6 +73,17 @@ private:
     // IS IMPLEMENTED.
     bool m_chunkVBOsNeedUpdating;
 
+    // ========== 多线程地形生成 ==========
+    // BlockTypeWorker 的输出：填好方块数据的 Chunk 指针
+    std::vector<Chunk*> m_chunksPendingVBO;
+    QMutex m_chunksPendingVBOMutex;
+
+    std::vector<ChunkVBOData> m_completedVBOs;
+    QMutex m_completedVBOsMutex;
+
+    // VBO 正在生成的 Chunk，防止重复派发
+    std::unordered_set<int64_t> m_vboInProgress;
+
     OpenGLContext* mp_context;
 
 public:
@@ -104,9 +124,9 @@ public:
     static float getGrasslandHeight(float x, float z);
     static float getMountainHeight(float x, float z);
     static float getBiomeBlend(float x, float z);
-    void fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ);
+    static void fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ);
     // ★ 新增：用噪声函数直接计算 (x,z) 处的地表高度（不依赖实际方块数据）
-    float getHeightAt(float x, float z) const;
+    static float getHeightAt(float x, float z);
 
     // Initializes the Chunks that store the 64 x 256 x 64 block scene you
     // see when the base code is run.
@@ -117,4 +137,7 @@ public:
 
     //★ 新增：返回命中结果
     RaycastResult raycast(glm::vec3 origin, glm::vec3 dir, float maxDist) const;
+
+    // ---- 方法声明 ----
+    void tick(glm::vec3 playerPos);  // 每帧调用
 };

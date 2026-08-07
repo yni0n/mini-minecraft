@@ -1,8 +1,11 @@
 #include "terrain.h"
 #include "cube.h"
+#include "blocktypeworker.h"
+#include "vboworker.h"
 #include <stdexcept>
 #include <glm/gtc/noise.hpp>
 #include <cmath>
+#include <QThreadPool>
 #include <iostream>
 
 Terrain::Terrain(OpenGLContext *context)
@@ -150,6 +153,7 @@ void Terrain::draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shader
         for(int z = minZ; z < maxZ; z += 16) {
             if(!hasChunkAt(x, z)) continue;       // ★ 跳过不存在的区块
             const uPtr<Chunk> &chunk = getChunkAt(x, z);
+            if(!chunk->hasVBO()) continue;
             shaderProgram->drawInterleaved(*chunk);
         }
     }
@@ -160,6 +164,7 @@ void Terrain::drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProg
         for(int z = minZ; z < maxZ; z += 16) {
             if(!hasChunkAt(x, z)) continue;
             const uPtr<Chunk> &chunk = getChunkAt(x, z);
+            if(!chunk->hasVBO()) continue;
             shaderProgram->drawInterleavedTransparent(*chunk);
         }
     }
@@ -257,13 +262,13 @@ float Terrain::getMountainHeight(float x, float z) {
         amp *= persistence;
         freq *= 2.0;
     }
-    return 128.f + pow(val ,1.0) * 180.f;  // [128, 308]
+    return 128.f + pow(val ,1.5) * 180.f;  // [128, 308]
 }
 
 //地形属性低频噪声 + smoothstep
 float Terrain::getBiomeBlend(float x, float z) {
     // 低频 Perlin → 大片区域缓慢变化
-    float noise = glm::perlin(glm::vec2(x * 0.008f, z * 0.008f));
+    float noise = glm::perlin(glm::vec2(x * 0.007f, z * 0.007f));
     // 从 [-1, 1] 映射到 [0, 1]
     float t = (noise + 1.f) * 0.5f;
     // smoothstep: 在 [0.25, 0.75] 之间平滑过渡
@@ -441,7 +446,7 @@ RaycastResult Terrain::raycast(glm::vec3 origin, glm::vec3 dir, float maxDist) c
     return result;
 }
 
-float Terrain::getHeightAt(float x, float z) const {
+float Terrain::getHeightAt(float x, float z) {
     float grassH     = getGrasslandHeight(x, z);
     float mountainH  = getMountainHeight(x, z);
     float blend      = getBiomeBlend(x, z);
@@ -480,29 +485,6 @@ void Terrain::CreateTestScene(glm::vec3 playerPos)
         }
     }
 
-    // // Create the basic terrain floor
-    // for(int x = 0; x < 64; ++x) {
-    //     for(int z = 0; z < 64; ++z) {
-    //         if((x + z) % 2 == 0) {
-    //             setGlobalBlockAt(x, 128, z, STONE);
-    //         }
-    //         else {
-    //             setGlobalBlockAt(x, 128, z, DIRT);
-    //         }
-    //     }
-    // }
-    // // Add "walls" for collision testing
-    // for(int x = 0; x < 64; ++x) {
-    //     setGlobalBlockAt(x, 129, 16, GRASS);
-    //     setGlobalBlockAt(x, 130, 16, GRASS);
-    //     setGlobalBlockAt(x, 129, 48, GRASS);
-    //     setGlobalBlockAt(16, 130, x, GRASS);
-    // }
-    // // Add a central column
-    // for(int y = 129; y < 140; ++y) {
-    //     setGlobalBlockAt(32, y, 32, GRASS);
-    // }
-
     // ★ 放完所有方块后，统一构建每个 Chunk 的 VBO
     // ---- 对所有新创建的 Chunk 填充地形并构建 VBO ----
     // ★ 第一步：先填地形（所有 Chunk 的方块数据就位）
@@ -532,4 +514,121 @@ void Terrain::CreateTestScene(glm::vec3 playerPos)
             }
         }
     }
+}
+
+void Terrain::tick(glm::vec3 playerPos) {
+    // ============================================================
+    // 阶段 1：上传已完成的 VBO 数据到 GPU（主线程才有 OpenGL 上下文）
+    // ============================================================
+    {
+        QMutexLocker lock(&m_completedVBOsMutex);
+        for(auto& vbo : m_completedVBOs) {
+            Chunk* c = getChunkAt(vbo.chunkX, vbo.chunkZ).get();
+            // ★ 临时方案：直接把 VBO 数据拷贝给 Chunk 并上传
+            //   后续会让 Chunk 提供一个 uploadVBOData() 方法
+            c->uploadVBOData(vbo.opaqueData,  vbo.opaqueIdx,
+                             vbo.transparentData, vbo.transparentIdx);
+            c->setVBOReady(true);
+
+            // 从 VBO 进行中集合移除
+            m_vboInProgress.erase(toKey(vbo.chunkX, vbo.chunkZ));
+        }
+        m_completedVBOs.clear();
+    }
+
+    // ============================================================
+    // 阶段 2：BlockTypeWorker 完成的 Chunk → 链接邻居 → 派发 VBOWorker
+    // ============================================================
+    {
+        QMutexLocker lock(&m_chunksPendingVBOMutex);
+        for(Chunk* c : m_chunksPendingVBO) {
+            int cx = c->getMinX();
+            int cz = c->getMinZ();
+
+            // 链接四个方向的邻居（如果邻居 Chunk 已存在）
+            if(hasChunkAt(cx + 16, cz))
+                c->linkNeighbor(getChunkAt(cx + 16, cz), XPOS);
+            if(hasChunkAt(cx - 16, cz))
+                c->linkNeighbor(getChunkAt(cx - 16, cz), XNEG);
+            if(hasChunkAt(cx, cz + 16))
+                c->linkNeighbor(getChunkAt(cx, cz + 16), ZPOS);
+            if(hasChunkAt(cx, cz - 16))
+                c->linkNeighbor(getChunkAt(cx, cz - 16), ZNEG);
+
+            auto* worker = new VBOWorker(c, m_completedVBOs, m_completedVBOsMutex);
+            QThreadPool::globalInstance()->start(worker);
+        }
+        m_chunksPendingVBO.clear();
+    }
+
+    // ============================================================
+    // 阶段 3：扫描 5×5 Zone → 分类任务
+    // ============================================================
+    int playerZoneX = static_cast<int>(glm::floor(playerPos.x / 64.f)) * 64;
+    int playerZoneZ = static_cast<int>(glm::floor(playerPos.z / 64.f)) * 64;
+
+    // ---- 待派发队列（本 tick 暂存，后续换成直接创建线程） ----
+    std::vector<glm::ivec2> blockTypeZoneQueue;  // Zone 坐标，派给 BlockTypeWorker
+    std::vector<Chunk*>     vboWorkerQueue;       // Chunk 指针，派给 VBOWorker
+
+    const int zoneRadius = 2;
+    for(int dz = -zoneRadius; dz <= zoneRadius; ++dz) {
+        for(int dx = -zoneRadius; dx <= zoneRadius; ++dx) {
+            int zoneX = playerZoneX + dx * 64;
+            int zoneZ = playerZoneZ + dz * 64;
+            int64_t zoneKey = toKey(zoneX, zoneZ);
+
+            if(m_generatedTerrain.find(zoneKey) == m_generatedTerrain.end()) {
+                // ---- Zone 未生成 → 主线程立即创建 16 个空 Chunk 外壳 ----
+                m_generatedTerrain.insert(zoneKey);
+
+                for(int cz = 0; cz < 64; cz += 16) {
+                    for(int cx = 0; cx < 64; cx += 16) {
+                        instantiateChunkAt(zoneX + cx, zoneZ + cz);
+                    }
+                }
+
+                // 整个 Zone 派给 BlockTypeWorker 去填方块数据
+                blockTypeZoneQueue.push_back(glm::ivec2(zoneX, zoneZ));
+            }
+            else {
+                // ---- Zone 已生成 → 检查每个 Chunk 是否需要 VBO ----
+                for(int cz = 0; cz < 64; cz += 16) {
+                    for(int cx = 0; cx < 64; cx += 16) {
+                        int chunkX = zoneX + cx;
+                        int chunkZ = zoneZ + cz;
+                        int64_t chunkKey = toKey(chunkX, chunkZ);
+
+                        if(!hasChunkAt(chunkX, chunkZ)) continue;
+
+                        Chunk* c = getChunkAt(chunkX, chunkZ).get();
+                        if(!c->hasVBO()
+                            && m_vboInProgress.find(chunkKey) == m_vboInProgress.end()) {
+                            vboWorkerQueue.push_back(c);
+                            m_vboInProgress.insert(chunkKey);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 派发 BlockTypeWorker ----
+    for(auto& zone : blockTypeZoneQueue) {
+        std::vector<Chunk*> zoneChunks;
+        for(int cz = 0; cz < 64; cz += 16) {
+            for(int cx = 0; cx < 64; cx += 16) {
+                zoneChunks.push_back(
+                    getChunkAt(zone.x + cx, zone.y + cz).get());
+            }
+        }
+        auto* worker = new BlockTypeWorker(zone.x, zone.y, zoneChunks,
+                                           m_chunksPendingVBO, m_chunksPendingVBOMutex);
+        QThreadPool::globalInstance()->start(worker);
+    }
+    // 临时：打印本帧扫描结果
+    /*if(!blockTypeZoneQueue.empty() || !vboWorkerQueue.empty()) {
+        std::cout << "[tick] new zones: " << blockTypeZoneQueue.size()
+        << " | vbo-needed: " << vboWorkerQueue.size() << std::endl;
+    }*/
 }

@@ -144,30 +144,29 @@ void Chunk::linkNeighbor(uPtr<Chunk> &neighbor, Direction dir) {
     }
 }
 
-// ============== 面剔除交错 VBO 生成 ==============
-void Chunk::createVBOdata() {
-    std::vector<GLfloat> opaqueData, transparentData;   // 存放 pos+ nor+ col 的交错数据
-    std::vector<GLuint>  opaqueIdx,   transparentIdx;    // 三角形索引
-
+// ★ 纯 CPU 的面剔除循环（createVBOdata 和 computeVBOData 共用）
+void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
+                         std::vector<GLuint>&  opaqueIdx,
+                         std::vector<GLfloat>& transparentData,
+                         std::vector<GLuint>&  transparentIdx) const {
     for(int z = 0; z < 16; ++z) {
         for(int y = 0; y < 256; ++y) {
             for(int x = 0; x < 16; ++x) {
 
-                BlockType curr = getLocalBlockAt(x, y, z);//遍历当前的cube
+                BlockType curr = getLocalBlockAt(x, y, z);
                 if(curr == EMPTY) continue;
 
-                glm::vec3 worldBase(x + minX, y, z + minZ);//世界坐标
+                glm::vec3 worldBase(x + minX, y, z + minZ);
 
-                // 检查 6 个面
                 for(int f = 0; f < 6; ++f) {
-                    const FaceData& fd = faceDefs[f]; //提取每个面
-                    BlockType adj = EMPTY; //获取当前面的邻居类型
+                    const FaceData& fd = faceDefs[f];
+                    BlockType adj = EMPTY;
 
-                    switch(fd.dir) { //如果在边界则视为空气
+                    switch(fd.dir) {
                     case XPOS:
                         if(x == 15) {
                             auto it = m_neighbors.find(XPOS);
-                            if(it == m_neighbors.end() || !it->second) continue;  // 跳过面
+                            if(it == m_neighbors.end() || !it->second) continue;
                             adj = it->second->getLocalBlockAt(0, y, z);
                         } else adj = getLocalBlockAt(x+1, y, z);
                         break;
@@ -200,23 +199,19 @@ void Chunk::createVBOdata() {
                         break;
                     }
 
-                    // ========== 面剔除（仅控制正面） ==========
+                    // ========== 面剔除判断 ==========
                     bool currOp = isOpaque(curr);
                     bool renderFront = true;
 
                     if(adj != EMPTY) {
-                        // 同种液体相邻 → 不画面（液体视为一个整体）
                         if(curr == adj && (curr == WATER || curr == LAVA))
                             renderFront = false;
-                        // 不透明→不透明 → 不画面（标准方块剔除）
                         else if(currOp && isOpaque(adj))
                             renderFront = false;
-                        // 透明→不透明 → 不画面（水不朝石头画面）
                         else if(!currOp && isOpaque(adj))
                             renderFront = false;
                     }
 
-                    // 提前计算共用数据（反面也会用到）
                     glm::vec4 col = blockColor(curr);
                     glm::ivec2 atlasCell = BLOCK_FACE_ATLAS[curr][f];
                     float u0, v0, u1, v1;
@@ -228,7 +223,7 @@ void Chunk::createVBOdata() {
                         glm::vec2(u0, v0)
                     };
 
-                    // ========== 渲染正面 ==========
+                    // ========== 正面 ==========
                     if(renderFront) {
                         std::vector<GLfloat>& targetData = currOp ? opaqueData : transparentData;
                         std::vector<GLuint>&  targetIdx  = currOp ? opaqueIdx   : transparentIdx;
@@ -261,18 +256,16 @@ void Chunk::createVBOdata() {
                         targetIdx.push_back(baseIdx + 3);
                     }
 
-                    // ========== 液体反面（从内部看可见） ==========
-                    // LAVA：朝任何非LAVA方块都生成反面 → 写入不透明 VBO
-                    // WATER：仅朝空气生成反面 → 写入透明 VBO
+                    // ========== 液体反面 ==========
                     bool needBackFace = false;
-                    bool backIsOpaque = false;  // 反面进哪个 VBO
+                    bool backIsOpaque = false;
 
                     if(curr == LAVA && adj != LAVA) {
                         needBackFace = true;
-                        backIsOpaque = true;      // 岩浆反面进不透明 VBO
+                        backIsOpaque = true;
                     } else if(curr == WATER && adj == EMPTY) {
                         needBackFace = true;
-                        backIsOpaque = false;     // 水反面进透明 VBO
+                        backIsOpaque = false;
                     }
 
                     if(needBackFace) {
@@ -302,7 +295,6 @@ void Chunk::createVBOdata() {
                             backData.push_back(uvs[v].y);
                         }
 
-                        // 反面索引：反转绕序
                         backIdx.push_back(revBaseIdx);
                         backIdx.push_back(revBaseIdx + 2);
                         backIdx.push_back(revBaseIdx + 1);
@@ -314,7 +306,48 @@ void Chunk::createVBOdata() {
             }
         }
     }
+}
 
+// ============== 面剔除交错 VBO 生成 ==============
+void Chunk::createVBOdata() {
+    std::vector<GLfloat> opaqueData, transparentData;   // 存放 pos+ nor+ col 的交错数据
+    std::vector<GLuint>  opaqueIdx,   transparentIdx;    // 三角形索引
+
+    // ★ 调共享逻辑
+    buildVBOData(opaqueData, opaqueIdx, transparentData, transparentIdx);
+
+    // ---- 上传不透明 VBO ----
+    indexCounts[INDEX] = static_cast<int>(opaqueIdx.size());
+    generateBuffer(INDEX);
+    bindBuffer(INDEX);
+    mp_context->glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                             opaqueIdx.size() * sizeof(GLuint),
+                             opaqueIdx.data(), GL_STATIC_DRAW);
+    generateBuffer(INTERLEAVED);
+    bindBuffer(INTERLEAVED);
+    mp_context->glBufferData(GL_ARRAY_BUFFER,
+                             opaqueData.size() * sizeof(GLfloat),
+                             opaqueData.data(), GL_STATIC_DRAW);
+
+    // ---- 上传透明 VBO ----
+    indexCounts[INDEX_TRANSPARENT] = static_cast<int>(transparentIdx.size());
+    generateBuffer(INDEX_TRANSPARENT);
+    bindBuffer(INDEX_TRANSPARENT);
+    mp_context->glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                             transparentIdx.size() * sizeof(GLuint),
+                             transparentIdx.data(), GL_STATIC_DRAW);
+    generateBuffer(INTERLEAVED_TRANSPARENT);
+    bindBuffer(INTERLEAVED_TRANSPARENT);
+    mp_context->glBufferData(GL_ARRAY_BUFFER,
+                             transparentData.size() * sizeof(GLfloat),
+                             transparentData.data(), GL_STATIC_DRAW);
+    m_vboReady = true;
+}
+
+void Chunk::uploadVBOData(const std::vector<GLfloat>& opaqueData,
+                          const std::vector<GLuint>&  opaqueIdx,
+                          const std::vector<GLfloat>& transparentData,
+                          const std::vector<GLuint>&  transparentIdx) {
     // ---- 上传不透明 VBO ----
     indexCounts[INDEX] = static_cast<int>(opaqueIdx.size());
     generateBuffer(INDEX);
@@ -347,4 +380,11 @@ void Chunk::createInstancedVBOdata(std::vector<glm::vec3> &offsets,
                                    std::vector<glm::vec3> &colors) {
     // 当前 Chunk 使用 createVBOdata() + drawInterleaved()
     // 此函数仅在后续需要实例化渲染时实现
+}
+
+void Chunk::computeVBOData(std::vector<GLfloat>& opaqueData,
+                           std::vector<GLuint>&  opaqueIdx,
+                           std::vector<GLfloat>& transparentData,
+                           std::vector<GLuint>&  transparentIdx) const {
+    buildVBOData(opaqueData, opaqueIdx, transparentData, transparentIdx);
 }
