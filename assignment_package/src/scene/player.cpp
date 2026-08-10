@@ -16,6 +16,29 @@ void Player::tick(float dT, InputBundle &input) {
     computePhysics(dT, mcr_terrain, input);
 }
 
+bool Player::isInFluid(const Terrain &terrain) const {
+    // 检查脚部位置
+    int fx = static_cast<int>(glm::floor(m_position.x));
+    int fy = static_cast<int>(glm::floor(m_position.y));
+    int fz = static_cast<int>(glm::floor(m_position.z));
+
+    if(terrain.hasChunkAt(fx, fz) && fy >= 0 && fy < 256) {
+        BlockType b = terrain.getGlobalBlockAt(fx, fy, fz);
+        if(b == WATER || b == LAVA) return true;
+    }
+
+    // 检查眼睛高度（处理半身入水的情况）
+    glm::vec3 eye = m_position + glm::vec3(0.f, 1.5f, 0.f);
+    int ex = static_cast<int>(glm::floor(eye.x));
+    int ey = static_cast<int>(glm::floor(eye.y));
+    int ez = static_cast<int>(glm::floor(eye.z));
+
+    if(terrain.hasChunkAt(ex, ez) && ey >= 0 && ey < 256) {
+        BlockType b = terrain.getGlobalBlockAt(ex, ey, ez);
+        if(b == WATER || b == LAVA) return true;
+    }
+}
+
 void Player::processInputs(InputBundle &inputs) {
     // Update the Player's velocity and acceleration based on the
     // state of the inputs.
@@ -75,30 +98,38 @@ void Player::computePhysics(float dT, const Terrain &terrain, InputBundle &input
     // 防止 dt 爆炸
     dT = glm::min(dT, 0.1f);
 
+    // ========== 0. 检测流体状态 ==========
+    bool inFluid = !m_flightMode && isInFluid(terrain);
+    const float fluidMul = inFluid ? (2.f / 3.f) : 1.f;
+
+    // ========== 地面检测（流体中不算"着地"）==========
     bool onGround = false;
     if(!m_flightMode) {
-        glm::vec3 footCheck = m_position + glm::vec3(0.f, -0.05f, 0.f);
+        glm::vec3 footCheck = m_position + glm::vec3(0.f, -0.07f, 0.f);
         onGround = terrain.checkPlayerCollision(footCheck);
     }
 
-    if(onGround && inputs.spacePressed && m_velocity.y <= 0.001f) {
-        float groundY = mcr_terrain.getHeightAt(m_position.x, m_position.z);
-        // printf("JUMP! foot=%.3f ground=%.3f vy=%.3f\n",
-        //        m_position.y, groundY + 1.0f, m_velocity.y);
-        m_velocity.y = 8.0f;
+    // ========== 跳跃 / 游泳 ==========
+    if(!m_flightMode) {
+        if(inFluid && inputs.spacePressed) {
+            // 游泳：恒定速率向上游动（覆盖重力）
+            m_velocity.y = 4.0f;
+        } else if(onGround && inputs.spacePressed && m_velocity.y <= 0.001f) {
+            m_velocity.y = 8.0f;
+        }
     }
 
     // ========== 1. 加速度 → 速度 ==========
-    m_velocity += m_acceleration * dT;
+    m_velocity += m_acceleration * dT* fluidMul;
 
     // ========== 2. 重力（仅行走模式） ==========
     if(!m_flightMode) {
-        m_velocity.y -= 20.0f * dT;   // 20 m/s² 向下加速度
+        m_velocity.y -= 20.0f * dT * fluidMul;   // 20 m/s² 向下加速度
     }
 
     // ========== 3. 摩擦/空气阻力 ==========
     // pow(0.95, dt): 每秒速度保留 5%，与帧率无关
-    const float damping = 0.01f;
+    const float damping = 0.005f;
     if(m_flightMode) {
         // 飞行模式：所有轴都减速
         m_velocity *= glm::pow(damping, dT);
@@ -111,7 +142,7 @@ void Player::computePhysics(float dT, const Terrain &terrain, InputBundle &input
 
     // ========== 4. 速度上限 ==========
     float speed = glm::length(glm::vec2(m_velocity.x, m_velocity.z));
-    const float maxSpeed = 10.0f;
+    const float maxSpeed = 10.0f* fluidMul;
     if(speed > maxSpeed) {
         glm::vec2 maxSpeedXZ = glm::normalize(glm::vec2(m_velocity.x, m_velocity.z)) * maxSpeed;
         m_velocity.x = maxSpeedXZ.x;

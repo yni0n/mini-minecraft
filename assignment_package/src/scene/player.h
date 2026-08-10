@@ -9,6 +9,7 @@ private:
     Camera m_camera;
     const Terrain &mcr_terrain;
     bool m_flightMode;                              // ★ 新增
+    bool isInFluid(const Terrain &terrain) const;   //是否在液体
 
     void processInputs(InputBundle &inputs);
     void computePhysics(float dT, const Terrain &terrain, InputBundle &input);
