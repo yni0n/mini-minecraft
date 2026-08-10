@@ -67,8 +67,8 @@ static const std::array<glm::ivec2, 6> BLOCK_FACE_ATLAS[] = {
      glm::ivec2(15,15), glm::ivec2(15,15), glm::ivec2(15,15) },
 
     // ★ [7] BEDROCK — 你自己改数字
-    { glm::ivec2(0,7), glm::ivec2(0,7), glm::ivec2(0,7),
-     glm::ivec2(0,7), glm::ivec2(0,7), glm::ivec2(0,7) },
+    { glm::ivec2(1,1), glm::ivec2(1,1), glm::ivec2(1,1),
+     glm::ivec2(1,1), glm::ivec2(1,1), glm::ivec2(1,1) },
     };
 
 static const FaceData faceDefs[6] = {//面的数据
@@ -166,15 +166,16 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                     case XPOS:
                         if(x == 15) {
                             auto it = m_neighbors.find(XPOS);
-                            if(it == m_neighbors.end() || !it->second) continue;
-                            adj = it->second->getLocalBlockAt(0, y, z);
+                            if(it != m_neighbors.end() && it->second)
+                                adj = it->second->getLocalBlockAt(0, y, z);
+                            // else: adj 保持 EMPTY（邻居未生成 = 当作空气）
                         } else adj = getLocalBlockAt(x+1, y, z);
                         break;
                     case XNEG:
                         if(x == 0) {
                             auto it = m_neighbors.find(XNEG);
-                            if(it == m_neighbors.end() || !it->second) continue;
-                            adj = it->second->getLocalBlockAt(15, y, z);
+                            if(it != m_neighbors.end() && it->second)
+                                adj = it->second->getLocalBlockAt(15, y, z);
                         } else adj = getLocalBlockAt(x-1, y, z);
                         break;
                     case YPOS:
@@ -186,15 +187,15 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                     case ZPOS:
                         if(z == 15) {
                             auto it = m_neighbors.find(ZPOS);
-                            if(it == m_neighbors.end() || !it->second) continue;
-                            adj = it->second->getLocalBlockAt(x, y, 0);
+                            if(it != m_neighbors.end() && it->second)
+                                adj = it->second->getLocalBlockAt(x, y, 0);
                         } else adj = getLocalBlockAt(x, y, z+1);
                         break;
                     case ZNEG:
                         if(z == 0) {
                             auto it = m_neighbors.find(ZNEG);
-                            if(it == m_neighbors.end() || !it->second) continue;
-                            adj = it->second->getLocalBlockAt(x, y, 15);
+                            if(it != m_neighbors.end() && it->second)
+                                adj = it->second->getLocalBlockAt(x, y, 15);
                         } else adj = getLocalBlockAt(x, y, z-1);
                         break;
                     }

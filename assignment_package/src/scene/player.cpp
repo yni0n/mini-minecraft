@@ -123,28 +123,29 @@ void Player::computePhysics(float dT, const Terrain &terrain, InputBundle &input
 
     // ========== 6. 地面分轴碰撞 ==========
     // ----- X 轴 -----
-    glm::vec3 candidateX = m_position + glm::vec3(delta.x, 0.f, 0.f);
-    if(terrain.checkPlayerCollision(candidateX)) {
-        m_velocity.x = 0.f;   // 撞墙，清零 X 速度
-        delta.x = 0.f;
-    }
+    if(!m_flightMode) {
+        glm::vec3 candidateX = m_position + glm::vec3(delta.x, 0.f, 0.f);
+        if(terrain.checkPlayerCollision(candidateX)) {
+            m_velocity.x = 0.f;   // 撞墙，清零 X 速度
+            delta.x = 0.f;
+        }
 
-    // ----- Y 轴 -----
-    glm::vec3 candidateY = m_position + glm::vec3(0.f, delta.y, 0.f);
-    if(terrain.checkPlayerCollision(candidateY)) {
-        if(m_velocity.y<0.0) m_velocity.y = 0.f;   // 落地 / 撞天花板，清零 Y 速度
-        delta.y = 0.f;
-    }
+        // ----- Y 轴 -----
+        glm::vec3 candidateY = m_position + glm::vec3(0.f, delta.y, 0.f);
+        if(terrain.checkPlayerCollision(candidateY)) {
+            if(m_velocity.y<0.0) m_velocity.y = 0.f;   // 落地 / 撞天花板，清零 Y 速度
+            delta.y = 0.f;
+        }
 
-    // ----- Z 轴 -----
-    glm::vec3 candidateZ = m_position + glm::vec3(0.f, 0.f, delta.z);
-    if(terrain.checkPlayerCollision(candidateZ)) {
-        m_velocity.z = 0.f;   // 撞墙，清零 Z 速度
-        delta.z = 0.f;
-    }
+        // ----- Z 轴 -----
+        glm::vec3 candidateZ = m_position + glm::vec3(0.f, 0.f, delta.z);
+        if(terrain.checkPlayerCollision(candidateZ)) {
+            m_velocity.z = 0.f;   // 撞墙，清零 Z 速度
+            delta.z = 0.f;
+        }
 
-    if(delta.x != 0.f && delta.z !=0.f){
-        glm::vec3 candidateXZ = m_position + glm::vec3(delta.x, 0.f, delta.z);
+        if(delta.x != 0.f && delta.z !=0.f){
+            glm::vec3 candidateXZ = m_position + glm::vec3(delta.x, 0.f, delta.z);
             if(terrain.checkPlayerCollision(candidateXZ)) {
                 if(abs(delta.x)<abs(delta.z)){
                     m_velocity.x = 0.f;   // 撞墙，清零 X 速度
@@ -154,6 +155,7 @@ void Player::computePhysics(float dT, const Terrain &terrain, InputBundle &input
                     delta.z = 0.f;
                 }
             }
+        }
     }
     // ========== 8. 应用位移（Player 重写版：自身 + 相机同步移动） ==========
     moveAlongVector(delta);

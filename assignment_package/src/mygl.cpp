@@ -1,6 +1,6 @@
 #include "mygl.h"
 #include <glm_includes.h>
-
+#include "scene/chunk.h"
 #include <iostream>
 #include <QApplication>
 #include <QKeyEvent>
@@ -216,8 +216,8 @@ void MyGL::renderTerrain() {
     m_progLambert.setUnifMat4("u_Model", glm::mat4(1.0f));
     m_progLambert.setUnifMat4("u_ModelInvTr", glm::mat4(1.0f));
     // 绘制玩家周围的 3×3 个 64×64 区域
-    for(int dx = -1; dx <= 1; ++dx) {
-        for(int dz = -1; dz <= 1; ++dz) {
+    for(int dx = -3; dx <= 3; ++dx) {
+        for(int dz = -3; dz <= 3; ++dz) {
             int zoneX = playerZoneX + dx * 64;
             int zoneZ = playerZoneZ + dz * 64;
             m_terrain.draw(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
@@ -229,8 +229,8 @@ void MyGL::renderTerrain() {
     //glDisable(GL_CULL_FACE);   // ← 新增：液体面从内部也能看见
     glDepthMask(GL_FALSE);   // 透明物体不写深度
 
-    for(int dx = -1; dx <= 1; ++dx) {
-        for(int dz = -1; dz <= 1; ++dz) {
+    for(int dx = -3; dx <= 3; ++dx) {
+        for(int dz = -3; dz <= 3; ++dz) {
             int zoneX = playerZoneX + dx * 64;
             int zoneZ = playerZoneZ + dz * 64;
             m_terrain.drawTransparent(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
@@ -316,6 +316,12 @@ void MyGL::mousePressEvent(QMouseEvent *e) {
     // ============ 左键：破坏方块 ============
     if(e->button() == Qt::LeftButton) {
         if(!result.hit) return;
+
+        // ★ 如果命中方块是 BEDROCK，不破坏
+        BlockType target = m_terrain.getGlobalBlockAt(result.blockPos.x,
+                                                      result.blockPos.y,
+                                                      result.blockPos.z);
+        if(target == BEDROCK) return;
 
         m_terrain.setGlobalBlockAt(result.blockPos.x,
                                    result.blockPos.y,
