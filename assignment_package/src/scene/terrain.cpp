@@ -154,6 +154,7 @@ void Terrain::draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shader
             if(!hasChunkAt(x, z)) continue;       // ★ 跳过不存在的区块
             const uPtr<Chunk> &chunk = getChunkAt(x, z);
             if(!chunk->hasVBO()) continue;
+            if(chunk->elemCount(INDEX) <= 0) continue;       // ← 新增
             shaderProgram->drawInterleaved(*chunk);
         }
     }
@@ -165,6 +166,7 @@ void Terrain::drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProg
             if(!hasChunkAt(x, z)) continue;
             const uPtr<Chunk> &chunk = getChunkAt(x, z);
             if(!chunk->hasVBO()) continue;
+            if(chunk->elemCount(INDEX_TRANSPARENT) <= 0) continue;   // ← 新增
             shaderProgram->drawInterleavedTransparent(*chunk);
         }
     }
@@ -555,6 +557,9 @@ void Terrain::tick(glm::vec3 playerPos) {
     // ============================================================
     {
         QMutexLocker lock(&m_chunksPendingVBOMutex);
+        // 本帧已标脏的集合
+        std::unordered_set<int64_t> dirtyThisFrame;
+
         for(Chunk* c : m_chunksPendingVBO) {
             int cx = c->getMinX();
             int cz = c->getMinZ();
@@ -564,33 +569,45 @@ void Terrain::tick(glm::vec3 playerPos) {
                 auto& neighbor = getChunkAt(cx + 16, cz);
                 c->linkNeighbor(neighbor, XPOS);
                 // ★ 方案 B：邻居已有 VBO → 标记重建（新链接改变了面剔除结果）
-                if(neighbor->hasVBO()) {
-                    neighbor->setVBOReady(false);
-                    m_vboInProgress.erase(toKey(cx + 16, cz));
+                int64_t nk = toKey(cx + 16, cz);
+                if(neighbor->hasVBO() && dirtyThisFrame.find(nk) == dirtyThisFrame.end()) {
+                    dirtyThisFrame.insert(nk);   // 本帧不重复标脏
+                    auto* nw = new VBOWorker(neighbor.get(), m_completedVBOs, m_completedVBOsMutex);
+                    QThreadPool::globalInstance()->start(nw);
+                    m_vboInProgress.insert(nk);  // 防止 Stage 3 重复派发
                 }
             }
             if(hasChunkAt(cx - 16, cz)) {
                 auto& neighbor = getChunkAt(cx - 16, cz);
                 c->linkNeighbor(neighbor, XNEG);
-                if(neighbor->hasVBO()) {
-                    neighbor->setVBOReady(false);
-                    m_vboInProgress.erase(toKey(cx - 16, cz));
+                int64_t nk = toKey(cx - 16, cz);
+                if(neighbor->hasVBO() && dirtyThisFrame.find(nk) == dirtyThisFrame.end()) {
+                    dirtyThisFrame.insert(nk);   // 本帧不重复标脏
+                    auto* nw = new VBOWorker(neighbor.get(), m_completedVBOs, m_completedVBOsMutex);
+                    QThreadPool::globalInstance()->start(nw);
+                    m_vboInProgress.insert(nk);  // 防止 Stage 3 重复派发
                 }
             }
             if(hasChunkAt(cx, cz + 16)) {
                 auto& neighbor = getChunkAt(cx, cz + 16);
                 c->linkNeighbor(neighbor, ZPOS);
-                if(neighbor->hasVBO()) {
-                    neighbor->setVBOReady(false);
-                    m_vboInProgress.erase(toKey(cx, cz + 16));
+                int64_t nk = toKey(cx, cz + 16);
+                if(neighbor->hasVBO() && dirtyThisFrame.find(nk) == dirtyThisFrame.end()) {
+                    dirtyThisFrame.insert(nk);   // 本帧不重复标脏
+                    auto* nw = new VBOWorker(neighbor.get(), m_completedVBOs, m_completedVBOsMutex);
+                    QThreadPool::globalInstance()->start(nw);
+                    m_vboInProgress.insert(nk);  // 防止 Stage 3 重复派发
                 }
             }
             if(hasChunkAt(cx, cz - 16)) {
                 auto& neighbor = getChunkAt(cx, cz - 16);
                 c->linkNeighbor(neighbor, ZNEG);
-                if(neighbor->hasVBO()) {
-                    neighbor->setVBOReady(false);
-                    m_vboInProgress.erase(toKey(cx, cz - 16));
+                int64_t nk = toKey(cx, cz - 16);
+                if(neighbor->hasVBO() && dirtyThisFrame.find(nk) == dirtyThisFrame.end()) {
+                    dirtyThisFrame.insert(nk);   // 本帧不重复标脏
+                    auto* nw = new VBOWorker(neighbor.get(), m_completedVBOs, m_completedVBOsMutex);
+                    QThreadPool::globalInstance()->start(nw);
+                    m_vboInProgress.insert(nk);  // 防止 Stage 3 重复派发
                 }
             }
 
@@ -650,6 +667,7 @@ void Terrain::tick(glm::vec3 playerPos) {
 
                         Chunk* c = getChunkAt(chunkX, chunkZ).get();
                         if(!c->hasVBO()
+                            && c->hasBlockData()                          // ← 新增：没方块数据不建 VBO
                             && m_vboInProgress.find(chunkKey) == m_vboInProgress.end()) {
                             vboWorkerQueue.push_back(c);
                             m_vboInProgress.insert(chunkKey);

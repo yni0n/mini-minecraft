@@ -349,6 +349,16 @@ void Chunk::uploadVBOData(const std::vector<GLfloat>& opaqueData,
                           const std::vector<GLuint>&  opaqueIdx,
                           const std::vector<GLfloat>& transparentData,
                           const std::vector<GLuint>&  transparentIdx) {
+    // ★ 如果已有旧 buffer，先释放
+    if(bufGenerated[INDEX]) {
+        mp_context->glDeleteBuffers(1, &bufHandles[INDEX]);
+        mp_context->glDeleteBuffers(1, &bufHandles[INTERLEAVED]);
+    }
+    if(bufGenerated[INDEX_TRANSPARENT]) {
+        mp_context->glDeleteBuffers(1, &bufHandles[INDEX_TRANSPARENT]);
+        mp_context->glDeleteBuffers(1, &bufHandles[INTERLEAVED_TRANSPARENT]);
+    }
+
     // ---- 上传不透明 VBO ----
     indexCounts[INDEX] = static_cast<int>(opaqueIdx.size());
     generateBuffer(INDEX);
