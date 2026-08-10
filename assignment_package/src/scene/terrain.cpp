@@ -367,6 +367,7 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
             }
         }
     }
+    chunk->setBlockDataFilled(true);
 }
 
 bool Terrain::checkPlayerCollision(glm::vec3 pos) const {
@@ -501,10 +502,7 @@ void Terrain::CreateTestScene(glm::vec3 playerPos)
     int playerZoneX = static_cast<int>(glm::floor(playerPos.x / 64.f)) * 64;
     int playerZoneZ = static_cast<int>(glm::floor(playerPos.z / 64.f)) * 64;
 
-    // Create the Chunks that will
-    // store the blocks for our
-    // initial world space
-    // ---- 生成 3×3 个 Zone（每个 Zone = 4×4 个 Chunk） ----
+    // ★ 恢复同步生成：创建 Chunk → 填地形 → 建 VBO
     for(int dz = -1; dz <= 1; ++dz) {
         for(int dx = -1; dx <= 1; ++dx) {
             int zoneX = playerZoneX + dx * 64;
@@ -512,44 +510,16 @@ void Terrain::CreateTestScene(glm::vec3 playerPos)
 
             int64_t zoneKey = toKey(zoneX, zoneZ);
             if(m_generatedTerrain.find(zoneKey) != m_generatedTerrain.end())
-                continue;                        // 已存在，跳过
+                continue;
 
             m_generatedTerrain.insert(zoneKey);
-
-            // 为该 Zone 创建 4×4 = 16 个 Chunk
-            for(int cx = 0; cx < 64; cx += 16) {
-                for(int cz = 0; cz < 64; cz += 16) {
-                    instantiateChunkAt(zoneX + cx, zoneZ + cz);
-                }
-            }
-        }
-    }
-
-    // ★ 放完所有方块后，统一构建每个 Chunk 的 VBO
-    // ---- 对所有新创建的 Chunk 填充地形并构建 VBO ----
-    // ★ 第一步：先填地形（所有 Chunk 的方块数据就位）
-    for(int dz = -1; dz <= 1; ++dz) {
-        for(int dx = -1; dx <= 1; ++dx) {
-            int zoneX = playerZoneX + dx * 64;
-            int zoneZ = playerZoneZ + dz * 64;
-            for(int cx = 0; cx < 64; cx += 16) {
-                for(int cz = 0; cz < 64; cz += 16) {
-                    uPtr<Chunk> &c = getChunkAt(zoneX + cx, zoneZ + cz);
-                    fillChunkWithTerrain(c.get(), zoneX + cx, zoneZ + cz);
-                }
-            }
-        }
-    }
-
-    // ★ 第二步：再统一构建 VBO（此时所有邻居的方块数据都是正确的）
-    for(int dz = -1; dz <= 1; ++dz) {
-        for(int dx = -1; dx <= 1; ++dx) {
-            int zoneX = playerZoneX + dx * 64;
-            int zoneZ = playerZoneZ + dz * 64;
-            for(int cx = 0; cx < 64; cx += 16) {
-                for(int cz = 0; cz < 64; cz += 16) {
-                    uPtr<Chunk> &c = getChunkAt(zoneX + cx, zoneZ + cz);
-                    c->createVBOdata();
+            for(int cz = 0; cz < 64; cz += 16) {
+                for(int cx = 0; cx < 64; cx += 16) {
+                    int chunkX = zoneX + cx;
+                    int chunkZ = zoneZ + cz;
+                    Chunk* c = instantiateChunkAt(chunkX, chunkZ);
+                    fillChunkWithTerrain(c, chunkX, chunkZ);
+                    c->createVBOdata();          // ★ 在主线程算 VBO 并上传 GPU
                 }
             }
         }
@@ -561,7 +531,7 @@ void Terrain::tick(glm::vec3 playerPos) {
     // 阶段 1：上传已完成的 VBO 数据到 GPU（主线程才有 OpenGL 上下文）
     // ============================================================
     {
-        const int MAX_VBO_UPLOADS_PER_FRAME = 16;
+        const int MAX_VBO_UPLOADS_PER_FRAME = 8;
 
         QMutexLocker lock(&m_completedVBOsMutex);
         int uploaded = 0;
@@ -669,7 +639,7 @@ void Terrain::tick(glm::vec3 playerPos) {
                 blockTypeZoneQueue.push_back(glm::ivec2(zoneX, zoneZ));
             }
             else {
-                // ---- Zone 已生成 → 检查每个 Chunk 是否需要 VBO ----
+                // ---- Zone 已生成 → 检查每个 Chunk 是否需要 VBO 重建 ----
                 for(int cz = 0; cz < 64; cz += 16) {
                     for(int cx = 0; cx < 64; cx += 16) {
                         int chunkX = zoneX + cx;

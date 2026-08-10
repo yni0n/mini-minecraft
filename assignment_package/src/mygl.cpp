@@ -6,6 +6,61 @@
 #include <QKeyEvent>
 #include <QDateTime>
 
+// ============================================================
+// 视锥体裁剪工具（放在 mygl.cpp 顶部，所有函数之前）
+// ============================================================
+
+struct Frustum {
+    glm::vec4 planes[6];  // left, right, bottom, top, near, far
+};
+
+// 从 View-Projection 矩阵提取 6 个裁剪平面
+static Frustum extractFrustum(const glm::mat4& vp) {
+    Frustum f;
+    // Left   = row3 + row0
+    f.planes[0] = glm::vec4(vp[0][3] + vp[0][0], vp[1][3] + vp[1][0],
+                            vp[2][3] + vp[2][0], vp[3][3] + vp[3][0]);
+    // Right  = row3 - row0
+    f.planes[1] = glm::vec4(vp[0][3] - vp[0][0], vp[1][3] - vp[1][0],
+                            vp[2][3] - vp[2][0], vp[3][3] - vp[3][0]);
+    // Bottom = row3 + row1
+    f.planes[2] = glm::vec4(vp[0][3] + vp[0][1], vp[1][3] + vp[1][1],
+                            vp[2][3] + vp[2][1], vp[3][3] + vp[3][1]);
+    // Top    = row3 - row1
+    f.planes[3] = glm::vec4(vp[0][3] - vp[0][1], vp[1][3] - vp[1][1],
+                            vp[2][3] - vp[2][1], vp[3][3] - vp[3][1]);
+    // Near   = row3 + row2
+    f.planes[4] = glm::vec4(vp[0][3] + vp[0][2], vp[1][3] + vp[1][2],
+                            vp[2][3] + vp[2][2], vp[3][3] + vp[3][2]);
+    // Far    = row3 - row2
+    f.planes[5] = glm::vec4(vp[0][3] - vp[0][2], vp[1][3] - vp[1][2],
+                            vp[2][3] - vp[2][2], vp[3][3] - vp[3][2]);
+
+    // 归一化
+    for(int i = 0; i < 6; i++) {
+        float len = glm::length(glm::vec3(f.planes[i]));
+        f.planes[i] /= len;
+    }
+    return f;
+}
+
+// 测试 AABB 是否在视锥体内（true = 可见，false = 完全在外面）
+static bool zoneInFrustum(const Frustum& f,
+                      float mx, float my, float mz,
+                      float Mx, float My, float Mz) {
+    for(int i = 0; i < 6; i++) {
+        // 取 AABB 在平面法线方向上最远的那个顶点（p-vertex）
+        float px = (f.planes[i].x > 0) ? Mx : mx;
+        float py = (f.planes[i].y > 0) ? My : my;
+        float pz = (f.planes[i].z > 0) ? Mz : mz;
+        if(f.planes[i].x * px + f.planes[i].y * py +
+                f.planes[i].z * pz + f.planes[i].w < 0.f) {
+            return false;  // 完全在平面外侧 → 不可见
+        }
+    }
+    return true;
+}
+
 MyGL::MyGL(QWidget *parent)
     : OpenGLContext(parent), //初始化列表
       m_worldAxes(this),
@@ -212,14 +267,25 @@ void MyGL::renderTerrain() {
     int playerZoneZ = static_cast<int>(glm::floor(
                           m_player.mcr_position.z / 64.f)) * 64;
 
+    // ★ 构建视锥体（每帧根据当前摄像机重新计算）
+    glm::mat4 vp = m_player.mcr_camera.getViewProj();
+    Frustum frustum = extractFrustum(vp);
+
     // Chunk 顶点是世界坐标，不需要模型变换
     m_progLambert.setUnifMat4("u_Model", glm::mat4(1.0f));
     m_progLambert.setUnifMat4("u_ModelInvTr", glm::mat4(1.0f));
     // 绘制玩家周围的 3×3 个 64×64 区域
+    int visibleCount = 0;
     for(int dx = -3; dx <= 3; ++dx) {
         for(int dz = -3; dz <= 3; ++dz) {
             int zoneX = playerZoneX + dx * 64;
             int zoneZ = playerZoneZ + dz * 64;
+            // ★ 视锥体剔除：Zone 的 AABB = (zoneX, 0, zoneZ) ~ (zoneX+64, 256, zoneZ+64)
+            if(!zoneInFrustum(frustum, zoneX, 0.f, zoneZ,
+                           zoneX + 64.f, 256.f, zoneZ + 64.f)) {
+                continue;
+            }
+            visibleCount++;
             m_terrain.draw(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
                            &m_progLambert);
         }
@@ -233,6 +299,11 @@ void MyGL::renderTerrain() {
         for(int dz = -3; dz <= 3; ++dz) {
             int zoneX = playerZoneX + dx * 64;
             int zoneZ = playerZoneZ + dz * 64;
+            if(!zoneInFrustum(frustum, zoneX, 0.f, zoneZ,
+                           zoneX + 64.f, 256.f, zoneZ + 64.f)) {
+                continue;
+            }
+
             m_terrain.drawTransparent(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
                                       &m_progLambert);
         }

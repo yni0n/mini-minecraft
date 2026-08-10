@@ -57,6 +57,7 @@ private:
     std::unordered_map<Direction, Chunk*, EnumHash> m_neighbors;
 
     bool m_vboReady = false;//当前chunk的VBO是否就绪
+    bool m_blocksFilled = false;// ★ 方块数据是否已被 BlockTypeWorker 填充
 
     // ★ 面剔除循环（公共逻辑，被 createVBOdata 和 computeVBOData 共享）
     void buildVBOData(std::vector<GLfloat>& opaqueData,
@@ -78,6 +79,8 @@ public:
 
     bool hasVBO() const { return m_vboReady; }
     void setVBOReady(bool ready) { m_vboReady = ready; }
+    bool hasBlockData() const { return m_blocksFilled; }
+    void setBlockDataFilled(bool v = true) { m_blocksFilled = v; }
     // 供 VBOWorker 读取方块数据
     const std::array<BlockType, 65536>& blocks() const { return m_blocks; }
     int getMinX() const { return minX; }       // ← 新增
