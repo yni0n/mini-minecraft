@@ -67,8 +67,13 @@ MyGL::MyGL(QWidget *parent)
       m_progLambert(this), m_progFlat(this), m_progInstanced(this),
       m_terrain(this), m_player(glm::vec3(48.f, 129.f, 48.f), m_terrain),
       m_blockWireframe(this),           // ★ 新增
+      m_progPostProcess(this),      // ★ 新增
+      m_screenQuad(this),            // ★ 新增
       m_hasTarget(false),                // ★ 新增
-      m_texture(0)   // ★ 初始化为 0
+      m_texture(0),   // ★ 初始化为 0
+      m_frameBuffer(0),              // ★ 新增
+      m_renderTexture(0),            // ★ 新增
+      m_depthRenderBuffer(0)         // ★ 新增
 {
     // Connect the timer to a function so that when the timer ticks the function is executed
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(tick()));
@@ -146,6 +151,11 @@ void MyGL::initializeGL()
 
     // ★ 新增：加载纹理
     loadTexture();
+    // ★ 新增：后处理着色器和全屏四边形
+    m_progPostProcess.create(":/glsl/postprocess.vert.glsl",
+                             ":/glsl/postprocess.frag.glsl");
+    m_screenQuad.createVBOdata();
+    createFBO(this->width(), this->height());
 }
 
 //改变窗口大小就触发
@@ -153,6 +163,7 @@ void MyGL::resizeGL(int w, int h) {
     //This code sets the concatenated view and perspective projection matrices used for
     //our scene's camera view.
     m_player.setCameraWidthHeight(static_cast<unsigned int>(w), static_cast<unsigned int>(h));
+    createFBO(w, h);                          // ★ 新增：重建 FBO
     glm::mat4 viewproj = m_player.mcr_camera.getViewProj();
 
     // Upload the view-projection matrix to our shaders (i.e. onto the graphics card)
@@ -215,7 +226,11 @@ void MyGL::sendPlayerDataToGUI() const {
 // MyGL's constructor links update() to a timer that fires 60 times per second,
 // so paintGL() called at a rate of 60 frames per second.
 void MyGL::paintGL() {
+    // ============================================================
+    // Pass 1：渲染 3D 场景到 FBO 纹理
+    // ============================================================
     // Clear the screen so that we only see newly drawn images
+    glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     //计算VP，并给3个shader发送
@@ -247,6 +262,84 @@ void MyGL::paintGL() {
     m_progFlat.setUnifMat4("u_Model", glm::mat4());
     m_progFlat.draw(m_worldAxes);
     glEnable(GL_DEPTH_TEST);
+
+    // ============================================================
+    // Pass 2：后处理 — 全屏四边形采样 FBO 纹理 + 流体滤镜
+    // ============================================================
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);   // 切回默认帧缓冲
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // 绑定 FBO 纹理到纹理单元 0
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_renderTexture);
+
+    // 设置后处理 uniform
+    m_progPostProcess.setUnifInt("u_ScreenTexture", 0);
+    m_progPostProcess.setUnifInt("u_FluidType", getFluidType());
+    m_progPostProcess.setUnifFloat("u_Time", m_elapsedTime);
+
+    // 关闭深度测试和混合，全屏四边形直接覆盖
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+
+    m_progPostProcess.drawScreenQuad(m_screenQuad);
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+}
+
+void MyGL::createFBO(int width, int height) {
+    // 释放旧的 FBO 资源
+    if(m_frameBuffer) {
+        glDeleteFramebuffers(1, &m_frameBuffer);
+        glDeleteTextures(1, &m_renderTexture);
+        glDeleteRenderbuffers(1, &m_depthRenderBuffer);
+    }
+
+    // 创建帧缓冲
+    glGenFramebuffers(1, &m_frameBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
+
+    // 颜色附件：RGBA8 纹理
+    glGenTextures(1, &m_renderTexture);
+    glBindTexture(GL_TEXTURE_2D, m_renderTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+                 width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, m_renderTexture, 0);
+
+    // 深度附件：Renderbuffer（不可读，但更高效）
+    glGenRenderbuffers(1, &m_depthRenderBuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, m_depthRenderBuffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                          width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, m_depthRenderBuffer);
+
+    // 检查完整性
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if(status != GL_FRAMEBUFFER_COMPLETE) {
+        qDebug() << "FBO incomplete! status =" << status;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+int MyGL::getFluidType() const {
+    // 检查相机（眼睛）所在位置的方块
+    glm::vec3 camPos = m_player.mcr_camera.mcr_position;
+    int bx = static_cast<int>(glm::floor(camPos.x));
+    int by = static_cast<int>(glm::floor(camPos.y));
+    int bz = static_cast<int>(glm::floor(camPos.z));
+
+    if(m_terrain.hasChunkAt(bx, bz) && by >= 0 && by < 256) {
+        BlockType b = m_terrain.getGlobalBlockAt(bx, by, bz);
+        if(b == WATER) return 1;
+        if(b == LAVA)  return 2;
+    }
+    return 0;  // 不在流体中
 }
 
 // TODO: Change this so it renders the nine zones of generated

@@ -3,6 +3,7 @@
 #include <QImage>     // 顶部加
 #include "openglcontext.h"
 #include "shaderprogram.h"
+#include "screenquad.h"
 #include "scene/worldaxes.h"
 #include "scene/camera.h"
 #include "scene/terrain.h"
@@ -50,6 +51,15 @@ private:
 
     void sendPlayerDataToGUI() const;//把玩家数据发送给界面。signal
 
+    // ★ 后处理管线
+    GLuint m_frameBuffer;          // FBO 句柄
+    GLuint m_renderTexture;        // FBO 颜色纹理
+    GLuint m_depthRenderBuffer;    // FBO 深度缓冲
+    ShaderProgram m_progPostProcess;  // 后处理着色器
+    ScreenQuad m_screenQuad;          // 全屏四边形
+
+    void createFBO(int width, int height);   // 创建/重建 FBO
+    int getFluidType() const;                // 检测相机所在流体类型
 
 public:
     explicit MyGL(QWidget *parent = nullptr);

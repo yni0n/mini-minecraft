@@ -51,6 +51,7 @@ public:
     void drawInterleaved(Drawable &d); //交错数据的普通绘制
     void drawInterleavedTransparent(Drawable &d);   // ★ 透明方块绘制
     void drawInterleavedInstanced(InstancedDrawable &d); // 交错 VBO + 实例化绘制
+    void drawScreenQuad(Drawable &d);   // ★ 后处理专用：只绑定 Position + UV
 
     // Utility function used in create()
     char* textFileRead(const char*); //读取shader代码转为字符串

@@ -8,6 +8,7 @@ SOURCES += \
     $$PWD/scene/blocktypeworker.cpp \
     $$PWD/scene/blockwireframe.cpp \
     $$PWD/scene/vboworker.cpp \
+    $$PWD/screenquad.cpp \
     $$PWD/shaderprogram.cpp \
     $$PWD/drawable.cpp \
     $$PWD/cameracontrolshelp.cpp \
@@ -27,6 +28,7 @@ HEADERS += \
     $$PWD/scene/blocktypeworker.h \
     $$PWD/scene/blockwireframe.h \
     $$PWD/scene/vboworker.h \
+    $$PWD/screenquad.h \
     $$PWD/shaderprogram.h \
     $$PWD/drawable.h \
     $$PWD/cameracontrolshelp.h \
