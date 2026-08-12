@@ -69,6 +69,10 @@ static const std::array<glm::ivec2, 6> BLOCK_FACE_ATLAS[] = {
     // ★ [7] BEDROCK — 你自己改数字
     { glm::ivec2(1,1), glm::ivec2(1,1), glm::ivec2(1,1),
      glm::ivec2(1,1), glm::ivec2(1,1), glm::ivec2(1,1) },
+
+    //  [8] SAND
+    { glm::ivec2(1,2), glm::ivec2(1,2), glm::ivec2(1,2),
+     glm::ivec2(1,2), glm::ivec2(1,2), glm::ivec2(1,2) },
     };
 
 static const FaceData faceDefs[6] = {//面的数据
@@ -103,6 +107,7 @@ static glm::vec4 blockColor(BlockType t) {
     case SNOW:  return glm::vec4(1.f, 1.f, 1.f, anim);
     case LAVA:  return glm::vec4(1.f, 0.4f, 0.f, anim);
     case BEDROCK: return glm::vec4(0.2f, 0.2f, 0.2f, anim);
+    case SAND: return glm::vec4(0.7f, 0.9f, 0.9f, anim);
     default:    return glm::vec4(1.f, 0.f, 1.f, anim);
     }
 }

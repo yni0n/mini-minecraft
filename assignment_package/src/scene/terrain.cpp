@@ -333,6 +333,9 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                 caveCache[caveMaxY-1] = (caveCache[caveMaxY-2] + caveCache[caveMaxY]) * 0.5f;
             }
 
+            int waterLevel = 138;//沙滩
+            bool nearWater = (topY >= waterLevel - 3 && topY <= waterLevel + 2);
+
             // ---- 逐 Y 填充方块 + 应用洞穴缓存 ----
             for(int y = 0; y <= 255; ++y) {
                 BlockType block;
@@ -344,7 +347,13 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                     block = STONE;
                 }
                 else if(y <= topY) {
-                    if(blend < 0.5f) {
+                    if(topY < waterLevel) {
+                        // 水下：沙底
+                        block = (y > topY - 4) ? SAND : DIRT;
+                    } else if(nearWater) {
+                        // 水边沙滩
+                        block = (y > topY - 3) ? SAND : DIRT;
+                    } else if(blend < 0.5f) {
                         block = (y == topY) ? GRASS : DIRT;
                     } else {
                         block = (y == topY && y >= 200) ? SNOW : STONE;
