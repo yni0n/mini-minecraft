@@ -267,6 +267,19 @@ float Terrain::getMountainHeight(float x, float z) {
     return 158.f + pow(val ,1.5) * 100.f;  // [128, 308]
 }
 
+//沙漠
+float Terrain::getDesertHeight(float x, float z) {
+    float h = fractalNoise(glm::vec2(x * 0.008f, z * 0.008f), 3);
+    return 145.f + h * 6.f;  // 沙漠更平坦：[129, 141]
+}
+
+float Terrain::getDesertBlend(float x, float z) {
+    // 用不同频率/偏移的噪声，避免和草原/山地完全重合
+    float n = glm::perlin(glm::vec2(x * 0.003f + 1000.f, z * 0.003f + 1000.f));
+    float t = (n + 1.f) * 0.5f;
+    return glm::smoothstep(0.6f, 0.85f, t);  // 沙漠只占小部分区域
+}
+
 //地形属性低频噪声 + smoothstep
 float Terrain::getBiomeBlend(float x, float z) {
     // 低频 Perlin → 大片区域缓慢变化
@@ -334,7 +347,8 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
             }
 
             int waterLevel = 138;//沙滩
-            bool nearWater = (topY >= waterLevel - 3 && topY <= waterLevel + 2);
+            bool nearWater = (topY >= waterLevel - 3 && topY <= waterLevel + 1);
+            float desertBlend = getDesertBlend(worldX, worldZ);//沙漠
 
             // ---- 逐 Y 填充方块 + 应用洞穴缓存 ----
             for(int y = 0; y <= 255; ++y) {
@@ -347,7 +361,9 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                     block = STONE;
                 }
                 else if(y <= topY) {
-                    if(topY < waterLevel) {
+                    if(desertBlend > 0.5f) {
+                        block = (y > topY - 4) ? SAND : STONE;  // 顶部4层沙子
+                    }else if(topY < waterLevel) {
                         // 水下：沙底
                         block = (y > topY - 4) ? SAND : DIRT;
                     } else if(nearWater) {
@@ -501,8 +517,14 @@ RaycastResult Terrain::raycast(glm::vec3 origin, glm::vec3 dir, float maxDist) c
 float Terrain::getHeightAt(float x, float z) {
     float grassH     = getGrasslandHeight(x, z);
     float mountainH  = getMountainHeight(x, z);
-    float blend      = getBiomeBlend(x, z);
-    return glm::mix(grassH, mountainH, blend);
+    float desertH   = getDesertHeight(x, z);
+    float blend     = getBiomeBlend(x, z);
+    float desert    = getDesertBlend(x, z);
+
+    // 先算草原-山地混合
+    float grassMountainH = glm::mix(grassH, mountainH, blend);
+    // 再用 desert 值平滑过渡到沙漠高度
+    return glm::mix(grassMountainH, desertH, desert);
 }
 
 void Terrain::CreateTestScene(glm::vec3 playerPos)

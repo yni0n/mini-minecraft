@@ -68,6 +68,7 @@ MyGL::MyGL(QWidget *parent)
       m_terrain(this), m_player(glm::vec3(48.f, 129.f, 48.f), m_terrain),
       m_blockWireframe(this),           // ★ 新增
       m_progPostProcess(this),      // ★ 新增
+      m_progSky(this),              // ★ 新增
       m_screenQuad(this),            // ★ 新增
       m_hasTarget(false),                // ★ 新增
       m_texture(0),   // ★ 初始化为 0
@@ -154,6 +155,8 @@ void MyGL::initializeGL()
     // ★ 新增：后处理着色器和全屏四边形
     m_progPostProcess.create(":/glsl/postprocess.vert.glsl",
                              ":/glsl/postprocess.frag.glsl");
+    // ★ 新增:天空着色器(复用 postprocess.vert.glsl 做顶点着色器)
+    m_progSky.create(":/glsl/postprocess.vert.glsl", ":/glsl/sky.frag.glsl");
     m_screenQuad.createVBOdata();
     createFBO(this->width(), this->height());
 }
@@ -239,6 +242,7 @@ void MyGL::paintGL() {
     m_progFlat.setUnifMat4("u_ViewProj", viewproj);
     m_progInstanced.setUnifMat4("u_ViewProj", viewproj);
 
+    renderSky(viewproj);   // ★ 新增:先画天空(不写深度),地形后画自动遮挡
     renderTerrain();//绘制地形
 
     // ★ 新增：渲染方块描边
@@ -405,6 +409,29 @@ void MyGL::renderTerrain() {
     glDepthMask(GL_TRUE);
     //glEnable(GL_CULL_FACE);    // ← 新增：恢复面剔除
 }
+
+void MyGL::renderSky(const glm::mat4 &viewproj) {
+    // 方案要求传逆 ViewProj,把屏幕 NDC 反投影回世界空间
+    glm::mat4 invVP = glm::inverse(viewproj);
+
+    m_progSky.setUnifMat4("u_ViewProj", invVP);
+    m_progSky.setUnifIVec2("u_Dimensions", glm::ivec2(width(), height()));
+    m_progSky.setUnifVec3("u_Eye", m_player.mcr_camera.mcr_position);
+    m_progSky.setUnifFloat("u_Time", m_elapsedTime);
+
+    // 天空永远在最远处:不参与深度测试、不写深度
+    // 这样后画的地形能正常遮挡天空
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_BLEND);
+
+    m_progSky.drawScreenQuad(m_screenQuad);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_BLEND);
+}
+
 
 // ★ 新增：纹理加载函数实现
 void MyGL::loadTexture() {

@@ -8,5 +8,6 @@
         <file alias="textures/atlas.png">../textures/minecraft_textures_all.png</file>
         <file>glsl/postprocess.vert.glsl</file>
         <file>glsl/postprocess.frag.glsl</file>
+        <file>glsl/sky.frag.glsl</file>
     </qresource>
 </RCC>

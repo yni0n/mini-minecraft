@@ -57,6 +57,7 @@ private:
     GLuint m_depthRenderBuffer;    // FBO 深度缓冲
     ShaderProgram m_progPostProcess;  // 后处理着色器
     ScreenQuad m_screenQuad;          // 全屏四边形
+    ShaderProgram m_progSky;      // 天空纹理映射着色器
 
     void createFBO(int width, int height);   // 创建/重建 FBO
     int getFluidType() const;                // 检测相机所在流体类型
@@ -79,6 +80,7 @@ public:
     // Called from paintGL().绘制地形
     // Calls Terrain::draw().
     void renderTerrain();
+    void renderSky(const glm::mat4 &viewproj);
 
 protected:
     // Automatically invoked when the user

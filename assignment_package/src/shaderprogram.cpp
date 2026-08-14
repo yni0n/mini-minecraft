@@ -167,6 +167,18 @@ void ShaderProgram::setUnifInt(std::string name, int i) {
         std::cout << "Error: could not find shader variable with name " << name << std::endl;
     }
 }
+void ShaderProgram::setUnifIVec2(std::string name, const glm::ivec2 &v) {
+    useMe();
+    try {
+        int handle = m_unifs.at(name);
+        if(handle != -1) {
+            context->glUniform2i(handle, v.x, v.y);
+        }
+    }
+    catch(std::out_of_range &e) {
+        std::cout << "Error: could not find shader variable with name " << name << std::endl;
+    }
+}
 void ShaderProgram::setUnifArrayInt(std::string name, int offset, int i) {
     useMe();
     try {

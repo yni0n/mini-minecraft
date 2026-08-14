@@ -44,6 +44,7 @@ public:
     void setUnifFloat(std::string name, float f);
     void setUnifInt(std::string name, int i);
     void setUnifArrayInt(std::string name, int offset, int i);
+    void setUnifIVec2(std::string name, const glm::ivec2 &v);
 
     // Draw the given object to our screen using this ShaderProgram's shaders
     void draw(Drawable &d);

@@ -123,6 +123,8 @@ public:
     static float fractalNoise(glm::vec2 p, int octaves);//分型柏林
     static float getGrasslandHeight(float x, float z);
     static float getMountainHeight(float x, float z);
+    static float getDesertHeight(float x, float z);
+    static float getDesertBlend(float x, float z);
     static float getBiomeBlend(float x, float z);
     static float caveNoise(float x, float y, float z);   // 3D Perlin 洞穴噪声
     static void fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ);
