@@ -9,6 +9,7 @@ uniform ivec2 u_Dimensions; // Screen dimensions
 uniform vec3 u_Eye; // Camera pos
 
 uniform float u_Time;
+uniform vec3 u_SunDir;   // 太阳方向,由 CPU 每帧计算
 
 out vec4 out_Col;
 
@@ -209,10 +210,19 @@ void main()
     vec3 sunsetColor = uvToSunset(uv + offset * 0.1);
     vec3 duskColor = uvToDusk(uv + offset * 0.1);
 
+    // ★ 天空底色随太阳高度变色(白昼偏蓝、夜晚压暗)
+    float sunElev = u_SunDir.y;
+    vec3 daySky = vec3(0.45, 0.68, 1.0);
+    float dayBlend = smoothstep(0.0, 0.6, sunElev);
+    float nightFactor = 1.0 - smoothstep(-0.05, -0.35, sunElev) * 0.85;
+    sunsetColor = mix(sunsetColor, daySky, dayBlend * 0.85) * nightFactor;
+    duskColor    = mix(duskColor,    daySky, dayBlend * 0.85) * nightFactor;
+
     vec3 outColor = sunsetColor;
 
     // Add a glowing sun in the sky
-    vec3 sunDir = normalize(vec3(0, 0.1, 1.0));
+    //vec3 sunDir = normalize(vec3(0, 0.1, 1.0));
+    vec3 sunDir = u_SunDir;   // 已在 CPU 端归一化
     float sunSize = 30;
     float angle = acos(dot(rayDir, sunDir)) * 360.0 / PI;
     // If the angle between our ray dir and vector to center of sun
@@ -224,7 +234,7 @@ void main()
         }
         // Corona of sun, mix with sky color
         else {
-            outColor = mix(sunColor, sunsetColor, (angle - 7.5) / 22.5);
+            outColor = mix(sunColor, outColor, (angle - 7.5) / 22.5);   // 原来是 sunsetColor
         }
     }
     // Otherwise our ray is looking into just the sky

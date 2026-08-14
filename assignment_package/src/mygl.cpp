@@ -419,6 +419,19 @@ void MyGL::renderSky(const glm::mat4 &viewproj) {
     m_progSky.setUnifVec3("u_Eye", m_player.mcr_camera.mcr_position);
     m_progSky.setUnifFloat("u_Time", m_elapsedTime);
 
+    // ★ 太阳东升西落:绕 X 轴转。东=+X,西=-X
+    const float dayLength = 120.0f;                    // 一个昼夜的秒数,测试期用短值便于观察
+    const float TWO_PI = 6.2831853f;
+    float phase = glm::mod(m_elapsedTime, dayLength) / dayLength * TWO_PI;
+
+    // 若希望轨迹偏向南方(+Z),第三个分量加一个非零常量,如 0.35f
+    glm::vec3 sunDir = glm::normalize(glm::vec3(
+        glm::cos(phase),     // 东(+X) → 西(-X)
+        glm::sin(phase),     // 地平线(-1) → 天顶(1) → 地平线(-1)
+        0.f));
+
+    m_progSky.setUnifVec3("u_SunDir", sunDir);
+
     // 天空永远在最远处:不参与深度测试、不写深度
     // 这样后画的地形能正常遮挡天空
     glDisable(GL_DEPTH_TEST);
