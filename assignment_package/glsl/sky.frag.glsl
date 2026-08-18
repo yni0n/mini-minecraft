@@ -226,34 +226,40 @@ void main()
     // Add a glowing sun in the sky
     //vec3 sunDir = normalize(vec3(0, 0.1, 1.0));
     vec3 sunDir = u_SunDir;   // 已在 CPU 端归一化
-    float sunSize = 30;
-    float angle = acos(dot(rayDir, sunDir)) * 360.0 / PI;
-    // If the angle between our ray dir and vector to center of sun
-    // is less than the threshold, then we're looking at the sun
-    if(angle < sunSize) {
-        // Full center of sun
-        if(angle < 7.5) {
-            outColor = sunColor;
-        }
-        // Corona of sun, mix with sky color
-        else {
-            outColor = mix(sunColor, outColor, (angle - 7.5) / 22.5);   // 原来是 sunsetColor
-        }
+    // ★ 方形太阳(Minecraft 风格):实心方块 + 75% 同心外框 + 轻微光晕
+    vec3 sunCol = mix(vec3(1.0, 0.88, 0.68), vec3(1.0, 1.0, 0.88),
+                          smoothstep(0.0, 0.45, sunElev));
+    vec3 sFwd   = normalize(cross(vec3(0, 0, 1), sunDir));
+    vec3 sRight = cross(sunDir, sFwd);
+    // 视线相对太阳的角偏移(度):dx 沿基的"右",dy 沿基的"前"
+    float sdx = atan(dot(rayDir, sRight), dot(rayDir, sunDir)) * 180.0 / PI;
+    float sdy = atan(dot(rayDir, sFwd),   dot(rayDir, sunDir)) * 180.0 / PI;
+    float sCheb = max(abs(sdx), abs(sdy));   // 切比雪夫距离:正方形判定
+    float sRound = pow(pow(abs(sdx), 4.0) + pow(abs(sdy), 4.0), 0.25);  // 超椭圆距离:光晕用
+    float sunCore  = 5.0;                   // 中心方块半边长(度)
+    float sunOuter = sunCore * 1.25;         // 外框:比中心大 25%,同心
+    if(sCheb < sunCore) {
+        outColor = sunCol;                          // 中心:不透明度 100%
     }
-    // Otherwise our ray is looking into just the sky
+    else if(sCheb < sunOuter) {
+        outColor = mix(outColor, sunCol, 0.75);     // 外框:75%,透出背景
+    }
+    else if(sRound  < sunOuter * 1.7) {
+        float halo = 1.0 - smoothstep(sunOuter, sunOuter * 1.8, sRound);  // smoothstep:柔和渐隐
+        outColor = mix(outColor, sunCol, halo * 0.25);
+    }
     else {
+        // 原"日落/黄昏"渐变逻辑,原样保留在最后一个 else 里
         float raySunDot = dot(rayDir, sunDir);
 #define SUNSET_THRESHOLD 0.75
 #define DUSK_THRESHOLD -0.1
         if(raySunDot > SUNSET_THRESHOLD) {
             // Do nothing, sky is already correct color
         }
-        // Any dot product between 0.75 and -0.1 is a LERP b/t sunset and dusk color
         else if(raySunDot > DUSK_THRESHOLD) {
             float t = (raySunDot - SUNSET_THRESHOLD) / (DUSK_THRESHOLD - SUNSET_THRESHOLD);
             outColor = mix(outColor, duskColor, t);
         }
-        // Any dot product <= -0.1 are pure dusk color
         else {
             outColor = duskColor;
         }
@@ -266,7 +272,7 @@ void main()
     vec3 mRight = cross(moonDirS, mFwd);
     // 立体投影:天球 → 月亮切平面,月亮在原点;θ=90° 处投影半径为 1
     float pd = 1.0 + dot(rayDir, moonDirS);                     // 1=月亮中心,0=太阳方向
-    vec2 sp = vec2(dot(rayDir, mRight), dot(rayDir, mFwd)) / max(pd, 0.25);
+    vec2 sp = vec2(dot(rayDir, mRight), dot(rayDir, mFwd)) / max(pd, 0.15);
     vec2 starCell = sp * 40.0;                                  // 格子密度(调大=更密)
     vec2 starId = floor(starCell);
     vec2 starF = fract(starCell);
@@ -288,11 +294,23 @@ void main()
     float moonSize = 16.0;                       // 月盘角半径(度),比太阳(30)小
     vec3 moonColor = vec3(0.85, 0.88, 0.96);     // 冷白月光
 
-    if(moonAngle < moonSize) {
-       // 圆盘:中心实心,仅边缘 30% 柔和渐隐,不会出现环纹
-       float disk = 1.0 - smoothstep(moonSize * 0.85, moonSize, moonAngle);
-       outColor = mix(outColor, moonColor, disk * nightBlend);
-   }
+    // ★ 方形月亮:实心方块 + 75% 同心外框 + 轻微光晕,夜晚可见(复用星星段的 mFwd/mRight 基)
+    float mdx = atan(dot(rayDir, mRight), dot(rayDir, moonDir)) * 180.0 / PI;
+    float mdy = atan(dot(rayDir, mFwd),   dot(rayDir, moonDir)) * 180.0 / PI;
+    float mCheb = max(abs(mdx), abs(mdy));
+    float moonCore  = 4.0;                    // 月亮比太阳小一号
+    float moonOuter = moonCore * 1.25;
+    float mRound = pow(pow(abs(mdx), 4.0) + pow(abs(mdy), 4.0), 0.25);
+    if(mCheb < moonCore) {
+        outColor = mix(outColor, moonColor, nightBlend);
+    }
+    else if(mCheb < moonOuter) {
+        outColor = mix(outColor, moonColor, 0.75 * nightBlend);
+    }
+    else if(mRound < moonOuter * 1.8) {
+        float mHalo = 1.0 - smoothstep(moonOuter, moonOuter * 1.8, mRound);
+        outColor = mix(outColor, moonColor, mHalo * 0.2 * nightBlend);
+    }
 
     // ★ 云层:头顶分布,移动+翻涌+厚度随机;白天白、夜晚比背景浅
     // 噪声函数与原方案相同(worleyFBM):时间偏移让云整体漂移,内部 sin(第114行)实现翻涌
