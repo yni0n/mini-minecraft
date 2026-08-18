@@ -167,6 +167,44 @@ float worleyFBM(vec3 uv) {
     return sum;
 }
 
+// ============ 新云层工具(来自 cloud.txt) ============
+const float cloudscale = 0.7;
+const float speed = 0.03;
+const float clouddark = 0.75;
+const float cloudlight = 0.4;
+const float cloudcover = 0.2;
+const float cloudalpha = 8.0;
+
+const mat2 cm = mat2(1.6, 1.2, -1.2, 1.6);
+
+vec2 cldHash(vec2 p) {
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float cldNoise(vec2 p) {
+    const float K1 = 0.366025404;
+    const float K2 = 0.211324865;
+    vec2 i = floor(p + (p.x + p.y) * K1);
+    vec2 a = p - i + (i.x + i.y) * K2;
+    vec2 o = (a.x > a.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 b = a - o + K2;
+    vec2 c = a - 1.0 + 2.0 * K2;
+    vec3 h = max(0.5 - vec3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
+    vec3 n = h * h * h * h * vec3(dot(a, cldHash(i)), dot(b, cldHash(i + o)), dot(c, cldHash(i + 1.0)));
+    return dot(n, vec3(70.0));
+}
+
+float cldFbm(vec2 n) {
+    float total = 0.0, amplitude = 0.1;
+    for(int i = 0; i < 7; i++) {
+        total += cldNoise(n) * amplitude;
+        n = cm * n;
+        amplitude *= 0.4;
+    }
+    return total;
+}
+
 //#define RAY_AS_COLOR
 //#define SPHERE_UV_AS_COLOR
 //#define WORLEY_OFFSET
@@ -312,18 +350,64 @@ void main()
         outColor = mix(outColor, moonColor, mHalo * 0.2 * nightBlend);
     }
 
-    // ★ 云层:头顶分布,移动+翻涌+厚度随机;白天白、夜晚比背景浅
-    // 噪声函数与原方案相同(worleyFBM):时间偏移让云整体漂移,内部 sin(第114行)实现翻涌
-    vec3 cloudInput = rayDir + vec3(u_Time * 0.02, 0.0, u_Time * 0.01);
-    float cloudRaw  = worleyFBM(cloudInput);
-    // 仅地平线以上显示,头顶更密(uv.y: 0=脚下, 0.5=地平线, 1=头顶)
-    float heightFade = smoothstep(0.45, 0.67, uv.y);
-    // 厚度:FBM 值经阈值映射成云遮罩(值越大云越厚)
-    float cloudMask  = smoothstep(0.42, 0.68, cloudRaw) * heightFade;
-    // 云色:白天灰白(不刺眼),夜晚比背景浅
-    vec3 cloudCol = mix(outColor * 1.45, vec3(0.9, 0.9, 0.88), dayBlend);
-    // 半透明:0.5 让云透光,飘过太阳时半遮挡(看得见太阳变暗)
-    outColor = mix(outColor, cloudCol, cloudMask * 0.5);
+    // ★ 云层(新):屏幕空间 2D 云,仿 Minecraft 平铺云层
+    vec2 cldUV = rayDir.xz / max(rayDir.y + 1.0, 0.1);   // 天顶→(0,0), 地平线→单位圆
+    cldUV *= 4.5;
+    // 太阳在投影平面内沿 x 轴走:东(+1) → 天顶(0) → 西(-1)
+    // 云图案沿同一条路径平移,方向与太阳完全一致
+    cldUV.x += u_Time * 0.02;                            // 向东→西漂移(与太阳同向)                                     // 缩放:云角尺寸约 20°, 匹配 cloud.txt
+    float cldTime = u_Time * speed * 0.5;                // 翻涌(球极 UV 平移无奇点, 不会漩涡)
+
+    float cq = cldFbm(cldUV * cloudscale * 0.5);          // ① 大尺度位移场
+
+    float cr = 0.0;                                       // ② 脊状形状
+    vec2 cn = cldUV * cloudscale;
+    cn -= cq - cldTime;
+    float cw = 0.8;
+    for(int i = 0; i < 8; i++) {
+        cr += abs(cw * cldNoise(cn));
+        cn = cm * cn + cldTime;
+        cw *= 0.7;
+    }
+
+    float cf = 0.0;                                       // ③ 主体形状
+    cn = cldUV * cloudscale;
+    cn -= cq - cldTime;
+    cw = 0.7;
+    for(int i = 0; i < 8; i++) {
+        cf += cw * cldNoise(cn);
+        cn = cm * cn + cldTime;
+        cw *= 0.6;
+    }
+    cf *= cr + cf;                                        // 乘法组合出蓬松云
+
+    float cc = 0.0;                                       // ④ 颜色噪声
+    cldTime = u_Time * speed * 2.0;
+    cn = cldUV * cloudscale * 2.0;
+    cn -= cq - cldTime;
+    cw = 0.4;
+    for(int i = 0; i < 7; i++) {
+        cc += cw * cldNoise(cn);
+        cn = cm * cn + cldTime;
+        cw *= 0.6;
+    }
+    float cc1 = 0.0;                                      // ⑤ 颜色脊状噪声
+    cldTime = u_Time * speed * 3.0;
+    cn = cldUV * cloudscale * 3.0;
+    cn -= cq - cldTime;
+    cw = 0.4;
+    for(int i = 0; i < 7; i++) {
+        cc1 += abs(cw * cldNoise(cn));
+        cn = cm * cn + cldTime;
+        cw *= 0.6;
+    }
+    cc += cc1;
+
+    vec3 cldCol = clamp(mix(outColor * 1.35, vec3(1.05, 1.05, 1.0), dayBlend), 0.0, 1.0);
+    cldCol *= clamp(0.82 + 0.22 * cc, 0.0, 1.0);   // 夜晚压暗,保持"比背景浅"
+    float cldMask = clamp(cloudcover + cloudalpha * cf * cr + cc, 0.0, 1.0);
+    cldMask *= smoothstep(0.5, 0.58, uv.y);               // 仅地平线以上显示(沿用你原有行为)
+    outColor = mix(outColor, cldCol, cldMask * 0.85);
 
     out_Col = vec4(outColor, 1.0);
 
