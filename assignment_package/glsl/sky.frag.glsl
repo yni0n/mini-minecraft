@@ -169,7 +169,7 @@ float worleyFBM(vec3 uv) {
 
 //#define RAY_AS_COLOR
 //#define SPHERE_UV_AS_COLOR
-#define WORLEY_OFFSET
+//#define WORLEY_OFFSET
 
 void main()
 {
@@ -259,12 +259,47 @@ void main()
         }
     }
 
+    // ★ 星星:以月亮为中心的立体投影星空,整片星空随月亮一起移动
+    //    基绑定 moonDir → 星星与月亮同步转动;保角投影 → 星点恒为圆形
+    vec3 moonDirS = -u_SunDir;                                  // 月亮方向(与太阳共轨反向)
+    vec3 mFwd   = normalize(cross(vec3(0, 0, 1), moonDirS));     // 轨道面内方向(月亮轨道在 XY 平面附近,与 Z 轴不平行,基永不退化)
+    vec3 mRight = cross(moonDirS, mFwd);
+    // 立体投影:天球 → 月亮切平面,月亮在原点;θ=90° 处投影半径为 1
+    float pd = 1.0 + dot(rayDir, moonDirS);                     // 1=月亮中心,0=太阳方向
+    vec2 sp = vec2(dot(rayDir, mRight), dot(rayDir, mFwd)) / max(pd, 0.25);
+    vec2 starCell = sp * 40.0;                                  // 格子密度(调大=更密)
+    vec2 starId = floor(starCell);
+    vec2 starF = fract(starCell);
+    vec2 starHash = random2(starId);
+    vec2 starC = 0.5 + (starHash - 0.5) * 0.7;                  // 偏移±0.3,星点永不跨格被切断
+    float starD = distance(starF, starC);
+    float starCore = 1.0 - smoothstep(0.0, 0.05, starD);        // 星点半径≈0.5°,圆形
+    float starProb = step(0.88, starHash.x);                    // 约 12% 格子有星
+    float twinkle = 0.5 + 0.5 * sin(u_Time * 2.0 + (starHash.x + starHash.y) * 6.2831);
+    float starHeight = smoothstep(0.6, 0.68, uv.y);             // 地平线以上渐显
+    float farFade = smoothstep(-0.5, -0.2, dot(rayDir, moonDirS)); // 距月亮>~120°(接近太阳方向)淡出
+    float starMask = starCore * starProb * starHeight * nightBlend * twinkle * farFade;
+    vec3 starCol = mix(vec3(0.9, 0.92, 1.0), vec3(1.0, 0.96, 0.9), starHash.y);
+    outColor += starMask * starCol * 1.8;
+
+    // ★ 月亮:与太阳同一条轨道、相差 180°(太阳落山 → 月亮升起)
+    vec3 moonDir = -sunDir;
+    float moonAngle = acos(dot(rayDir, moonDir)) * 360.0 / PI;
+    float moonSize = 16.0;                       // 月盘角半径(度),比太阳(30)小
+    vec3 moonColor = vec3(0.85, 0.88, 0.96);     // 冷白月光
+
+    if(moonAngle < moonSize) {
+       // 圆盘:中心实心,仅边缘 30% 柔和渐隐,不会出现环纹
+       float disk = 1.0 - smoothstep(moonSize * 0.85, moonSize, moonAngle);
+       outColor = mix(outColor, moonColor, disk * nightBlend);
+   }
+
     // ★ 云层:头顶分布,移动+翻涌+厚度随机;白天白、夜晚比背景浅
     // 噪声函数与原方案相同(worleyFBM):时间偏移让云整体漂移,内部 sin(第114行)实现翻涌
     vec3 cloudInput = rayDir + vec3(u_Time * 0.02, 0.0, u_Time * 0.01);
     float cloudRaw  = worleyFBM(cloudInput);
     // 仅地平线以上显示,头顶更密(uv.y: 0=脚下, 0.5=地平线, 1=头顶)
-    float heightFade = smoothstep(0.5, 0.72, uv.y);
+    float heightFade = smoothstep(0.45, 0.67, uv.y);
     // 厚度:FBM 值经阈值映射成云遮罩(值越大云越厚)
     float cloudMask  = smoothstep(0.42, 0.68, cloudRaw) * heightFade;
     // 云色:白天灰白(不刺眼),夜晚比背景浅
