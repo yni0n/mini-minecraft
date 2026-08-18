@@ -212,11 +212,14 @@ void main()
 
     // ★ 天空底色随太阳高度变色(白昼偏蓝、夜晚压暗)
     float sunElev = u_SunDir.y;
-    vec3 daySky = vec3(0.45, 0.68, 1.0);
-    float dayBlend = smoothstep(0.0, 0.6, sunElev);
-    float nightFactor = 1.0 - smoothstep(-0.05, -0.35, sunElev) * 0.85;
-    sunsetColor = mix(sunsetColor, daySky, dayBlend * 0.85) * nightFactor;
-    duskColor    = mix(duskColor,    daySky, dayBlend * 0.85) * nightFactor;
+    vec3 daySky = vec3(0.45, 0.68, 1.0); //白天蓝色
+    vec3 nightSky = vec3(0.13, 0.10, 0.30);   // 夜晚蓝紫
+    float dayBlend = smoothstep(0.0, 0.6, sunElev); //当太阳y大于0.6时蓝色，0-0.6渐变晚霞
+    float nightBlend = 1.0 - smoothstep(-0.35, -0.05, sunElev);  // 1→0 夜晚(沉到 -0.35 以下为全夜)
+    sunsetColor = mix(sunsetColor, daySky,   dayBlend   * 0.85);
+    sunsetColor = mix(sunsetColor, nightSky, nightBlend * 0.9);
+    duskColor    = mix(duskColor,    daySky,   dayBlend   * 0.85);
+    duskColor    = mix(duskColor,    nightSky, nightBlend * 0.9);
 
     vec3 outColor = sunsetColor;
 
@@ -255,6 +258,19 @@ void main()
             outColor = duskColor;
         }
     }
+
+    // ★ 云层:头顶分布,移动+翻涌+厚度随机;白天白、夜晚比背景浅
+    // 噪声函数与原方案相同(worleyFBM):时间偏移让云整体漂移,内部 sin(第114行)实现翻涌
+    vec3 cloudInput = rayDir + vec3(u_Time * 0.02, 0.0, u_Time * 0.01);
+    float cloudRaw  = worleyFBM(cloudInput);
+    // 仅地平线以上显示,头顶更密(uv.y: 0=脚下, 0.5=地平线, 1=头顶)
+    float heightFade = smoothstep(0.5, 0.72, uv.y);
+    // 厚度:FBM 值经阈值映射成云遮罩(值越大云越厚)
+    float cloudMask  = smoothstep(0.42, 0.68, cloudRaw) * heightFade;
+    // 云色:白天灰白(不刺眼),夜晚比背景浅
+    vec3 cloudCol = mix(outColor * 1.45, vec3(0.9, 0.9, 0.88), dayBlend);
+    // 半透明:0.5 让云透光,飘过太阳时半遮挡(看得见太阳变暗)
+    outColor = mix(outColor, cloudCol, cloudMask * 0.5);
 
     out_Col = vec4(outColor, 1.0);
 
