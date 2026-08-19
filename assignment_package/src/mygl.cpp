@@ -377,17 +377,19 @@ void MyGL::renderTerrain() {
     glm::vec3 sunDir = m_sunDir;
     float sy = m_sunDir.y;
     // dayFactor: 0 = 深夜(只有环境光), 1 = 白天(满漫反射)
-    float dayFactor = glm::smoothstep(-0.25f, 0.1f, sy);
+    float sunFactor = glm::smoothstep(-0.05f, 0.1f, sy);
+    float moonFactor = glm::smoothstep(0.1f, 0.20f, -sy);
     // 光照方向始终指向太阳;夜里 lightColor=0,方向无所谓
-    glm::vec3 lightDir = m_sunDir;
+    glm::vec3 lightDir = (sy >= -0.05f) ? m_sunDir : -m_sunDir;
     // 低角度偏暖橙,正午偏白
-    glm::vec3 sunTint = glm::mix(glm::vec3(1.0f, 0.75f, 0.55f),
-                                 glm::vec3(1.0f),
+    glm::vec3 sunTint = glm::mix(glm::vec3(0.6f, 0.45f, 0.25f),
+                                 glm::vec3(0.7f, 0.7, 0.65),
                                  glm::smoothstep(0.0f, 0.25f, sy));
-    glm::vec3 lightColor   = sunTint * dayFactor;                // 夜里 → 0,没有漫反射
+    glm::vec3 moonTint(0.18f, 0.22f, 0.35f);
+    glm::vec3 lightColor   = sunTint * sunFactor + moonTint * moonFactor;
     glm::vec3 ambientColor = glm::mix(glm::vec3(0.07f, 0.08f, 0.13f),  // 夜:冷暗
-                                      glm::vec3(0.25f),                 // 日:中性
-                                      dayFactor);
+                                      glm::vec3(0.45f),                 // 日:中性
+                                      sunFactor);
     m_progLambert.setUnifVec3("u_LightDir", lightDir);
     m_progLambert.setUnifVec3("u_LightColor", lightColor);
     m_progLambert.setUnifVec3("u_AmbientColor", ambientColor);
