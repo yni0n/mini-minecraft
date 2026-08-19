@@ -32,7 +32,7 @@ in vec2 vs_UV;              // ★ 新增纹理坐标
 
 out vec4 fs_Pos;
 out vec4 fs_Nor;            // The array of normals that has been transformed by u_ModelInvTr. This is implicitly passed to the fragment shader.
-out vec4 fs_LightVec;       // The direction in which our virtual light lies, relative to each vertex. This is implicitly passed to the fragment shader.
+//out vec4 fs_LightVec;       // The direction in which our virtual light lies, relative to each vertex. This is implicitly passed to the fragment shader.
 out vec4 fs_Col;            // The color of each vertex. This is implicitly passed to the fragment shader.
 out vec2 v_UV;              // ★ 新增纹理坐标
 
@@ -55,7 +55,7 @@ void main()
 
     vec4 modelposition = u_Model * vs_Pos;   // Temporarily store the transformed vertex positions for use below
 
-    fs_LightVec = (lightDir);  // Compute the direction in which the light source lies
+    //fs_LightVec = (lightDir);  // Compute the direction in which the light source lies
 
     gl_Position = u_ViewProj * modelposition;// gl_Position is a built-in variable of OpenGL which is
                                              // used to render the final positions of the geometry's vertices

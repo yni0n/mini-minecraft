@@ -229,6 +229,9 @@ void MyGL::sendPlayerDataToGUI() const {
 // MyGL's constructor links update() to a timer that fires 60 times per second,
 // so paintGL() called at a rate of 60 frames per second.
 void MyGL::paintGL() {
+    //计算太阳方向
+    m_sunDir = computeSunDir();
+
     // ============================================================
     // Pass 1：渲染 3D 场景到 FBO 纹理
     // ============================================================
@@ -331,6 +334,14 @@ void MyGL::createFBO(int width, int height) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+glm::vec3 MyGL::computeSunDir() const {
+    const float dayLength = 120.0f;
+    const float TWO_PI = 6.2831853f;
+    float phase = glm::mod(m_elapsedTime, dayLength) / dayLength * TWO_PI;
+    return glm::normalize(glm::vec3(glm::cos(phase), glm::sin(phase), 0.f));
+}
+
+
 int MyGL::getFluidType() const {
     // 检查相机（眼睛）所在位置的方块
     glm::vec3 camPos = m_player.mcr_camera.mcr_position;
@@ -356,6 +367,33 @@ void MyGL::renderTerrain() {
     glBindTexture(GL_TEXTURE_2D, m_texture);
     m_progLambert.setUnifInt("u_Texture", 0);
     m_progLambert.setUnifFloat("u_Time", m_elapsedTime);
+    //绑定法线纹理
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_normalTexture);
+    m_progLambert.setUnifInt("u_NormalMap", 1);
+    glActiveTexture(GL_TEXTURE0);   // 记得切回 0，别破坏后面的绑定
+
+    // 根据太阳/月亮位置决定定向光
+    glm::vec3 sunDir = m_sunDir;
+    float sy = m_sunDir.y;
+    // dayFactor: 0 = 深夜(只有环境光), 1 = 白天(满漫反射)
+    float dayFactor = glm::smoothstep(-0.25f, 0.1f, sy);
+    // 光照方向始终指向太阳;夜里 lightColor=0,方向无所谓
+    glm::vec3 lightDir = m_sunDir;
+    // 低角度偏暖橙,正午偏白
+    glm::vec3 sunTint = glm::mix(glm::vec3(1.0f, 0.75f, 0.55f),
+                                 glm::vec3(1.0f),
+                                 glm::smoothstep(0.0f, 0.25f, sy));
+    glm::vec3 lightColor   = sunTint * dayFactor;                // 夜里 → 0,没有漫反射
+    glm::vec3 ambientColor = glm::mix(glm::vec3(0.07f, 0.08f, 0.13f),  // 夜:冷暗
+                                      glm::vec3(0.25f),                 // 日:中性
+                                      dayFactor);
+    m_progLambert.setUnifVec3("u_LightDir", lightDir);
+    m_progLambert.setUnifVec3("u_LightColor", lightColor);
+    m_progLambert.setUnifVec3("u_AmbientColor", ambientColor);
+    m_progLambert.setUnifVec3("u_Eye", m_player.mcr_camera.mcr_position);
+    m_progLambert.setUnifInt("u_NormalMapEnabled", m_normalMapEnabled ? 1 : 0);
+
 
     //m_terrain.draw(0, 64, 0, 64, &m_progInstanced);
     // 玩家所在的 64×64 区域左下角，需要渲染玩家周围的9个Zone
@@ -420,15 +458,7 @@ void MyGL::renderSky(const glm::mat4 &viewproj) {
     m_progSky.setUnifFloat("u_Time", m_elapsedTime);
 
     // ★ 太阳东升西落:绕 X 轴转。东=+X,西=-X
-    const float dayLength = 120.0f;                    // 一个昼夜的秒数,测试期用短值便于观察
-    const float TWO_PI = 6.2831853f;
-    float phase = glm::mod(m_elapsedTime, dayLength) / dayLength * TWO_PI;
-
-    // 若希望轨迹偏向南方(+Z),第三个分量加一个非零常量,如 0.35f
-    glm::vec3 sunDir = glm::normalize(glm::vec3(
-        glm::cos(phase),     // 东(+X) → 西(-X)
-        glm::sin(phase),     // 地平线(-1) → 天顶(1) → 地平线(-1)
-        0.f));
+    glm::vec3 sunDir = m_sunDir;
 
     m_progSky.setUnifVec3("u_SunDir", sunDir);
 
@@ -467,6 +497,21 @@ void MyGL::loadTexture() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
+
+    //法线贴图
+    QImage nimg(":/textures/normal_atlas.png");
+    if(nimg.isNull()) { qDebug() << "Failed to load normal atlas"; return; }
+    nimg = nimg.convertToFormat(QImage::Format_RGBA8888).mirrored(false, true);
+
+    glGenTextures(1, &m_normalTexture);
+    glBindTexture(GL_TEXTURE_2D, m_normalTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                 nimg.width(), nimg.height(), 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, nimg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 }
 
 //控制移动旋转和加速等
@@ -481,6 +526,7 @@ void MyGL::keyPressEvent(QKeyEvent *e) {
     case Qt::Key_E:     m_inputs.ePressed     = true; break;
     case Qt::Key_Space: m_inputs.spacePressed = true; break;
     case Qt::Key_F:     m_inputs.fPressed     = true; break;
+    case Qt::Key_N: m_normalMapEnabled = !m_normalMapEnabled; break;
     }
 }
 

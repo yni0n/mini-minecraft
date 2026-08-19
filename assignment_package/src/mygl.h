@@ -43,6 +43,7 @@ private:
     bool m_hasTarget;            // 当前是否有瞄准目标
 
     GLuint m_texture;             // ★ 新增：纹理对象句柄
+    GLuint m_normalTexture;       //法线纹理
     void loadTexture();           // ★ 新增：纹理加载函数
 
     void moveMouseToCenter(); // 强制把鼠标移动到屏幕正中心。 You should call this
@@ -61,6 +62,12 @@ private:
 
     void createFBO(int width, int height);   // 创建/重建 FBO
     int getFluidType() const;                // 检测相机所在流体类型
+
+    //blinn-Phong
+    glm::vec3 computeSunDir() const;   // 太阳方向（指向太阳）
+    glm::vec3 m_sunDir;                // 每帧更新
+    bool m_normalMapEnabled = false;   // 法线贴图是否启用，默认关
+
 
 public:
     explicit MyGL(QWidget *parent = nullptr);
