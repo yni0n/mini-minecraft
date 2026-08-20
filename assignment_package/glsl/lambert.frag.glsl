@@ -20,6 +20,10 @@ uniform vec3 u_LightDir;         // 指向光源
 uniform vec3 u_LightColor;
 uniform vec3 u_AmbientColor;
 uniform vec3 u_Eye;
+uniform vec3 u_FogSunColor;    // 朝太阳方向的雾色（sunset 色板）
+uniform vec3 u_FogDuskColor;   // 背太阳方向的雾色（dusk 色板）
+uniform vec3 u_FogSunDir;      // 太阳方向（用于方向雾，不随昼夜翻转）
+uniform float u_FogDensity;
 uniform int u_NormalMapEnabled;   // 0 = 关, 1 = 开
 
 // These are the interpolated values out of the rasterizer, so you can't know
@@ -102,8 +106,23 @@ void main()
     vec3 diffuse  = u_LightColor * diffuseTerm;
     vec3 specular = u_LightColor * specularTerm;
 
-    out_Col = vec4(diffuseColor.rgb * (ambient + diffuse) + specular,
-                   diffuseColor.a);
+    // ---------- 雾：远处淡入背景（天空地平线）色 ----------
+    vec3 litColor = diffuseColor.rgb * (ambient + diffuse) + specular;
+    float dist = length(fs_Pos.xyz - u_Eye);
+    float fogFactor = clamp(smoothstep(120.0, 200.0, dist), 0.0, 1.0);//60可见，200不可见
+    // ★ 方向雾：与 sky.frag.glsl:291-303 的 raySunDot 渐变完全一致
+    vec3 viewDir = normalize(fs_Pos.xyz - u_Eye);   // 眼睛→片元方向（与天空的 rayDir 同向）
+    float raySunDot = dot(viewDir, u_FogSunDir);
+    vec3 fogColor;
+    if(raySunDot > 0.75) {
+        fogColor = u_FogSunColor;                         // 朝太阳：日落黄
+    } else if(raySunDot > -0.1) {
+        float t = (raySunDot - 0.75) / (-0.1 - 0.75);    // 过渡带
+        fogColor = mix(u_FogSunColor, u_FogDuskColor, t);
+    } else {
+        fogColor = u_FogDuskColor;                        // 背太阳：黄昏紫
+    }
+    out_Col = vec4(mix(litColor, fogColor, fogFactor), diffuseColor.a);
 
     //float ambientTerm = 0.2;
     //float lightIntensity = diffuseTerm + ambientTerm;   //Add a small float value to the color multiplier

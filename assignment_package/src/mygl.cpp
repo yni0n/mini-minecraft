@@ -341,6 +341,20 @@ glm::vec3 MyGL::computeSunDir() const {
     return glm::normalize(glm::vec3(glm::cos(phase), glm::sin(phase), 0.f));
 }
 
+void MyGL::computeFogColors(glm::vec3& fogSun, glm::vec3& fogDusk) const {
+    float sy = m_sunDir.y;
+    // 与 sky.frag.glsl 地平线条目一致
+    glm::vec3 sunset0(255.f/255.f, 229.f/255.f, 119.f/255.f);  // sunset[0] 朝太阳
+    glm::vec3 dusk0  (144.f/255.f,  96.f/255.f, 144.f/255.f);  // dusk[0]   背太阳
+    glm::vec3 daySky(0.45f, 0.68f, 1.0f);
+    glm::vec3 nightSky(0.13f, 0.10f, 0.30f);
+    float dayBlend   = glm::smoothstep(0.0f, 0.6f, sy);
+    float nightBlend = 1.0f - glm::smoothstep(-0.35f, -0.05f, sy);
+    fogSun  = glm::mix(sunset0, daySky,   dayBlend   * 0.85f);
+    fogSun  = glm::mix(fogSun,  nightSky, nightBlend * 0.9f);
+    fogDusk = glm::mix(dusk0,   daySky,   dayBlend   * 0.85f);
+    fogDusk = glm::mix(fogDusk, nightSky, nightBlend * 0.9f);
+}
 
 int MyGL::getFluidType() const {
     // 检查相机（眼睛）所在位置的方块
@@ -394,6 +408,12 @@ void MyGL::renderTerrain() {
     m_progLambert.setUnifVec3("u_LightColor", lightColor);
     m_progLambert.setUnifVec3("u_AmbientColor", ambientColor);
     m_progLambert.setUnifVec3("u_Eye", m_player.mcr_camera.mcr_position);
+    glm::vec3 fogSun, fogDusk;
+    computeFogColors(fogSun, fogDusk);
+    m_progLambert.setUnifVec3("u_FogSunColor", fogSun);
+    m_progLambert.setUnifVec3("u_FogDuskColor", fogDusk);
+    m_progLambert.setUnifVec3("u_FogSunDir", m_sunDir);   // 方向雾用（注意不是 u_LightDir，夜里不翻转）
+    m_progLambert.setUnifFloat("u_FogDensity", m_fogDensity);
     m_progLambert.setUnifInt("u_NormalMapEnabled", m_normalMapEnabled ? 1 : 0);
 
 

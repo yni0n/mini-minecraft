@@ -68,6 +68,9 @@ private:
     glm::vec3 m_sunDir;                // 每帧更新
     bool m_normalMapEnabled = false;   // 法线贴图是否启用，默认关
 
+    void computeFogColors(glm::vec3& fogSun, glm::vec3& fogDusk) const;  // 两个方向的雾色   // 与天空地平线一致的雾色
+    float m_fogDensity = 0.012f;         // 雾密度，越大越雾
+
 
 public:
     explicit MyGL(QWidget *parent = nullptr);
