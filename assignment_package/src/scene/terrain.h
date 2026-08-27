@@ -115,8 +115,8 @@ public:
     // Draws every Chunk that falls within the bounding box
     // described by the min and max coords, using the provided
     // ShaderProgram
-    void draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram);
-    void drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram);
+    void draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram, const glm::vec4* frustumPlanes = nullptr);
+    void drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram, const glm::vec4* frustumPlanes = nullptr);
     // ★ 新增：根据玩家位置检查并扩展地形
     void expandTerrain(glm::vec3 playerPos);
     // ★ 新增：地形生成

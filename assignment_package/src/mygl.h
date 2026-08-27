@@ -34,6 +34,9 @@ private:
 
     QTimer m_timer; // Timer linked to tick(). 60帧/s。
 
+    QPoint m_lastMouseGlobal;   // 上一次鼠标的全局位置
+    bool m_haveLastMouse = false;
+
     qint64 m_prevFrameTime;   // ★ 新增：上一帧的时间戳（毫秒）
     float m_elapsedTime;          // ★ 游戏运行总时间 (秒)
 

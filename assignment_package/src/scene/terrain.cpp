@@ -147,11 +147,27 @@ Chunk* Terrain::instantiateChunkAt(int x, int z) {
 
 // TODO: When you make Chunk inherit from Drawable, change this code so
 // it draws each Chunk with the given ShaderProgram
-void Terrain::draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram) {
+void Terrain::draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram, const glm::vec4* frustumPlanes) {
 
     for(int x = minX; x < maxX; x += 16) {
         for(int z = minZ; z < maxZ; z += 16) {
             if(!hasChunkAt(x, z)) continue;       // ★ 跳过不存在的区块
+
+            // ★ 新增:Chunk 级视锥剔除 —— AABB (x, 0, z) ~ (x+16, 256, z+16)
+            if(frustumPlanes) {
+                bool visible = true;
+                for(int i = 0; i < 6; ++i) {
+                    const glm::vec4& p = frustumPlanes[i];
+                    float px = (p.x > 0.f) ? (x + 16.f) : static_cast<float>(x);
+                    float py = (p.y > 0.f) ? 256.f : 0.f;
+                    float pz = (p.z > 0.f) ? (z + 16.f) : static_cast<float>(z);
+                    if(p.x * px + p.y * py + p.z * pz + p.w < 0.f) {
+                        visible = false;          // 完全在平面外侧
+                        break;
+                    }
+                }
+                if(!visible) continue;
+            }
             const uPtr<Chunk> &chunk = getChunkAt(x, z);
             if(!chunk->hasVBO()) continue;
             if(chunk->elemCount(INDEX) <= 0) continue;       // ← 新增
@@ -160,10 +176,25 @@ void Terrain::draw(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shader
     }
 }
 
-void Terrain::drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram) {
+void Terrain::drawTransparent(int minX, int maxX, int minZ, int maxZ, ShaderProgram *shaderProgram, const glm::vec4* frustumPlanes) {
     for(int x = minX; x < maxX; x += 16) {
         for(int z = minZ; z < maxZ; z += 16) {
             if(!hasChunkAt(x, z)) continue;
+
+            if(frustumPlanes) {
+                bool visible = true;
+                for(int i = 0; i < 6; ++i) {
+                    const glm::vec4& p = frustumPlanes[i];
+                    float px = (p.x > 0.f) ? (x + 16.f) : static_cast<float>(x);
+                    float py = (p.y > 0.f) ? 256.f : 0.f;
+                    float pz = (p.z > 0.f) ? (z + 16.f) : static_cast<float>(z);
+                    if(p.x * px + p.y * py + p.z * pz + p.w < 0.f) {
+                        visible = false;          // 完全在平面外侧
+                        break;
+                    }
+                }
+                if(!visible) continue;
+            }
             const uPtr<Chunk> &chunk = getChunkAt(x, z);
             if(!chunk->hasVBO()) continue;
             if(chunk->elemCount(INDEX_TRANSPARENT) <= 0) continue;   // ← 新增
@@ -248,7 +279,7 @@ float Terrain::fractalNoise(glm::vec2 p, int octaves) {
 //草原丘陵
 float Terrain::getGrasslandHeight(float x, float z) {
     float h = fractalNoise(glm::vec2(x * 0.01f, z * 0.01f), 4);
-    return 140.f + h * 10.f;  // 高度范围: 138 ± 10 → [128, 148]
+    return 136.f + h * 10.f;  // 高度范围: 138 ± 10 → [128, 148]
 }
 
 //陡峭山

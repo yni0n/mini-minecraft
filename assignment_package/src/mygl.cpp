@@ -376,6 +376,8 @@ int MyGL::getFluidType() const {
 // for more info)
 //指定区域并绘制，使用实例绘制
 void MyGL::renderTerrain() {
+    glDisable(GL_BLEND);
+
     // ★ 新增：激活纹理单元 0 并绑定纹理
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_texture);
@@ -444,13 +446,14 @@ void MyGL::renderTerrain() {
             }
             visibleCount++;
             m_terrain.draw(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
-                           &m_progLambert);
+                           &m_progLambert, frustum.planes);
         }
     }
 
     // ========== 2. 绘制透明方块（Alpha 混合） ==========
     //glDisable(GL_CULL_FACE);   // ← 新增：液体面从内部也能看见
     glDepthMask(GL_FALSE);   // 透明物体不写深度
+    glEnable(GL_BLEND);
 
     for(int dx = -3; dx <= 3; ++dx) {
         for(int dz = -3; dz <= 3; ++dz) {
@@ -462,11 +465,12 @@ void MyGL::renderTerrain() {
             }
 
             m_terrain.drawTransparent(zoneX, zoneX + 64, zoneZ, zoneZ + 64,
-                                      &m_progLambert);
+                                      &m_progLambert, frustum.planes);
         }
     }
 
     glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
     //glEnable(GL_CULL_FACE);    // ← 新增：恢复面剔除
 }
 
@@ -566,16 +570,34 @@ void MyGL::keyReleaseEvent(QKeyEvent *e) {
 }
 
 void MyGL::mouseMoveEvent(QMouseEvent *e) {
-    // ★ 过滤掉 moveMouseToCenter() 触发的合成事件
     if(!e->spontaneous()) return;
 
-    QPoint center(width() / 2, height() / 2);
-    QPoint delta = e->pos() - center;
+    QPoint g = e->globalPos();
+    if(!m_haveLastMouse) {              // 第一个事件只记基准,不算位移
+        m_lastMouseGlobal = g;
+        m_haveLastMouse = true;
+        return;
+    }
 
-    m_inputs.mouseX += delta.x();   // 累积本帧所有鼠标移动
+    QPoint delta = g - m_lastMouseGlobal;
+
+    // 剔除异常跳变(warp 竞争残留、跨屏、DPI 突变产生的假位移)
+    if(qAbs(delta.x()) > 150 || qAbs(delta.y()) > 150) {
+        m_lastMouseGlobal = g;
+        return;
+    }
+
+    m_inputs.mouseX += delta.x();
     m_inputs.mouseY += delta.y();
 
-    moveMouseToCenter();  // 鼠标锁回屏幕中央
+    // 惰性回中:只有离中心够远才 warp,大幅缩小竞态窗口
+    QPoint center = this->mapToGlobal(QPoint(width() / 2, height() / 2));
+    if(qAbs(g.x() - center.x()) > 200 || qAbs(g.y() - center.y()) > 200) {
+        moveMouseToCenter();
+        m_lastMouseGlobal = center;     // warp 后把基准设为中心
+    } else {
+        m_lastMouseGlobal = g;
+    }
 }
 
 void MyGL::mousePressEvent(QMouseEvent *e) {

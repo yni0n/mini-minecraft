@@ -10,7 +10,7 @@ win32 {
     LIBS += -lglu32
 }
 CONFIG += warn_on
-CONFIG += debug
+#CONFIG += debug
 
 INCLUDEPATH += include
 
@@ -53,3 +53,6 @@ HEADERS +=
 SOURCES +=
 
 DISTFILES +=
+
+CONFIG += force_debug_info
+CONFIG -= depend_includepath  #测试完性能要删掉
