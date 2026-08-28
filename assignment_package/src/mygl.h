@@ -1,6 +1,9 @@
 #ifndef MYGL_H
 #define MYGL_H
-#include <QImage>     // 顶部加
+#include <QImage>
+#include <QWheelEvent>
+#include <QDateTime>
+#include <vector>
 #include "openglcontext.h"
 #include "shaderprogram.h"
 #include "screenquad.h"
@@ -37,17 +40,16 @@ private:
     QPoint m_lastMouseGlobal;   // 上一次鼠标的全局位置
     bool m_haveLastMouse = false;
 
-    qint64 m_prevFrameTime;   // ★ 新增：上一帧的时间戳（毫秒）
-    float m_elapsedTime;          // ★ 游戏运行总时间 (秒)
-
-    // ★ 新增：方块描边
+    qint64 m_prevFrameTime;   // 上一帧的时间戳（毫秒）
+    float m_elapsedTime;          // 游戏运行总时间 (秒)
+    // 方块描边
     BlockWireframe m_blockWireframe;
     glm::ivec3 m_targetBlock;    // 当前瞄准的方块坐标
     bool m_hasTarget;            // 当前是否有瞄准目标
 
-    GLuint m_texture;             // ★ 新增：纹理对象句柄
+    GLuint m_texture;             // 纹理对象句柄
     GLuint m_normalTexture;       //法线纹理
-    void loadTexture();           // ★ 新增：纹理加载函数
+    void loadTexture();           // 纹理加载函数
 
     void moveMouseToCenter(); // 强制把鼠标移动到屏幕正中心。 You should call this
                               // from within a mouse move event after reading the mouse movement so that
@@ -55,7 +57,7 @@ private:
 
     void sendPlayerDataToGUI() const;//把玩家数据发送给界面。signal
 
-    // ★ 后处理管线
+    // 后处理管线
     GLuint m_frameBuffer;          // FBO 句柄
     GLuint m_renderTexture;        // FBO 颜色纹理
     GLuint m_depthRenderBuffer;    // FBO 深度缓冲
@@ -73,6 +75,15 @@ private:
 
     void computeFogColors(glm::vec3& fogSun, glm::vec3& fogDusk) const;  // 两个方向的雾色   // 与天空地平线一致的雾色
     float m_fogDensity = 0.012f;         // 雾密度，越大越雾
+
+    // ★ 热键栏：滚轮在这 8 种方块之间循环
+    std::vector<BlockType> m_hotbar = { GRASS, DIRT, STONE, SAND,
+                                       WATER, SNOW, LAVA, BEDROCK };
+    int m_hotbarIndex = 0;
+
+    BlockType currentBlock() const { return m_hotbar[m_hotbarIndex]; }
+    void selectHotbar(int index);   // 唯一的切换入口
+    qint64 m_lastWheelTime = 0;
 
 
 public:
@@ -107,7 +118,9 @@ protected:
     // presses a mouse button
     void mousePressEvent(QMouseEvent *e) override;
 
-    void handleBlockInteraction(QMouseEvent *e);   // ★ 新增
+    void handleBlockInteraction(QMouseEvent *e);   //鼠标输入
+    void wheelEvent(QWheelEvent *e) override;   // 滚轮
+
 
 private slots:
     void tick(); // 定时器绑定的槽函数。called ~60 times per second by m_timer firing.
@@ -119,6 +132,7 @@ signals:
     void sig_sendPlayerLook(QString) const;
     void sig_sendPlayerChunk(QString) const;
     void sig_sendPlayerTerrainZone(QString) const;
+    void sig_sendCurrentBlock(QString) const;
 };
 
 

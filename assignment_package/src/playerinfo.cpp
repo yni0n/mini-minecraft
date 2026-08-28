@@ -35,4 +35,6 @@ void PlayerInfo::slot_setChunkText(QString s) {
 void PlayerInfo::slot_setZoneText(QString s) {
     ui->zoneLabel->setText(s);
 }
-
+void PlayerInfo::slot_setBlockText(QString s) {
+    ui->blockLabel->setText("Block: " + s);
+}

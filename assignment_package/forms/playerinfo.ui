@@ -263,6 +263,24 @@
     <string>UNK</string>
    </property>
   </widget>
+  <widget class="QLabel" name="blockLabel">
+   <property name="geometry">
+    <rect>
+     <x>230</x>
+     <y>300</y>
+     <width>131</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>10</pointsize>
+    </font>
+   </property>
+   <property name="text">
+    <string>-</string>
+   </property>
+  </widget>
  </widget>
  <resources/>
  <connections/>

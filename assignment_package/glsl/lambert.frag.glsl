@@ -109,7 +109,7 @@ void main()
     // ---------- 雾：远处淡入背景（天空地平线）色 ----------
     vec3 litColor = diffuseColor.rgb * (ambient + diffuse) + specular;
     float dist = length(fs_Pos.xyz - u_Eye);
-    float fogFactor = clamp(smoothstep(120.0, 200.0, dist), 0.0, 1.0);//60可见，200不可见
+    float fogFactor = clamp(smoothstep(220.0, 280.0, dist), 0.0, 1.0);//60可见，200不可见
     // ★ 方向雾：与 sky.frag.glsl:291-303 的 raySunDot 渐变完全一致
     vec3 viewDir = normalize(fs_Pos.xyz - u_Eye);   // 眼睛→片元方向（与天空的 rayDir 同向）
     float raySunDot = dot(viewDir, u_FogSunDir);

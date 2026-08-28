@@ -21,6 +21,8 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->mygl, SIGNAL(sig_sendPlayerLook(QString)), &playerInfoWindow, SLOT(slot_setLookText(QString)));
     connect(ui->mygl, SIGNAL(sig_sendPlayerChunk(QString)), &playerInfoWindow, SLOT(slot_setChunkText(QString)));
     connect(ui->mygl, SIGNAL(sig_sendPlayerTerrainZone(QString)), &playerInfoWindow, SLOT(slot_setZoneText(QString)));
+    connect(ui->mygl, SIGNAL(sig_sendCurrentBlock(QString)), &playerInfoWindow, SLOT(slot_setBlockText(QString)));
+
 }
 
 MainWindow::~MainWindow()

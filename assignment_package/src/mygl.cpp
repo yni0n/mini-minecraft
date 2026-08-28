@@ -43,6 +43,21 @@ static Frustum extractFrustum(const glm::mat4& vp) {
     }
     return f;
 }
+//返回方块名称
+static QString blockTypeName(BlockType b) {
+    switch(b) {
+    case EMPTY:   return "EMPTY";
+    case GRASS:   return "GRASS";
+    case DIRT:    return "DIRT";
+    case STONE:   return "STONE";
+    case SAND:    return "SAND";
+    case WATER:   return "WATER";
+    case SNOW:    return "SNOW";
+    case LAVA:    return "LAVA";
+    case BEDROCK: return "BEDROCK";
+    default:      return "UNKNOWN";
+    }
+}
 
 // 测试 AABB 是否在视锥体内（true = 可见，false = 完全在外面）
 static bool zoneInFrustum(const Frustum& f,
@@ -147,18 +162,23 @@ void MyGL::initializeGL()
     float deltaY = (groundY + 3.f) - m_player.mcr_position.y;
     m_player.moveUpGlobal(deltaY);       // Player 重写了此方法，相机也会同步移动
 
-    // ★ 新增：创建描边方块 VBO
+    // 创建描边方块 VBO
     m_blockWireframe.createVBOdata();
 
-    // ★ 新增：加载纹理
+    // 加载纹理
     loadTexture();
-    // ★ 新增：后处理着色器和全屏四边形
+    // 后处理着色器和全屏四边形
     m_progPostProcess.create(":/glsl/postprocess.vert.glsl",
                              ":/glsl/postprocess.frag.glsl");
-    // ★ 新增:天空着色器(复用 postprocess.vert.glsl 做顶点着色器)
+    // 天空着色器(复用 postprocess.vert.glsl 做顶点着色器)
     m_progSky.create(":/glsl/postprocess.vert.glsl", ":/glsl/sky.frag.glsl");
     m_screenQuad.createVBOdata();
     createFBO(this->width(), this->height());
+    //发送当前选择方块
+    emit sig_sendCurrentBlock(QString("1/%1  %2")
+                                  .arg(m_hotbar.size())
+                                  .arg(blockTypeName(currentBlock())));
+
 }
 
 //改变窗口大小就触发
@@ -435,8 +455,8 @@ void MyGL::renderTerrain() {
     m_progLambert.setUnifMat4("u_ModelInvTr", glm::mat4(1.0f));
     // 绘制玩家周围的 3×3 个 64×64 区域
     int visibleCount = 0;
-    for(int dx = -3; dx <= 3; ++dx) {
-        for(int dz = -3; dz <= 3; ++dz) {
+    for(int dx = -4; dx <= 4; ++dx) {
+        for(int dz = -4; dz <= 4; ++dz) {
             int zoneX = playerZoneX + dx * 64;
             int zoneZ = playerZoneZ + dz * 64;
             // ★ 视锥体剔除：Zone 的 AABB = (zoneX, 0, zoneZ) ~ (zoneX+64, 256, zoneZ+64)
@@ -455,8 +475,8 @@ void MyGL::renderTerrain() {
     glDepthMask(GL_FALSE);   // 透明物体不写深度
     glEnable(GL_BLEND);
 
-    for(int dx = -3; dx <= 3; ++dx) {
-        for(int dz = -3; dz <= 3; ++dz) {
+    for(int dx = -4; dx <= 4; ++dx) {
+        for(int dz = -4; dz <= 4; ++dz) {
             int zoneX = playerZoneX + dx * 64;
             int zoneZ = playerZoneZ + dz * 64;
             if(!zoneInFrustum(frustum, zoneX, 0.f, zoneZ,
@@ -657,7 +677,34 @@ void MyGL::mousePressEvent(QMouseEvent *e) {
         if(!m_terrain.hasChunkAt(cx, cz)) return;
 
         m_terrain.setGlobalBlockAt(placePos.x, placePos.y,
-                                   placePos.z, LAVA);
+                                   placePos.z, currentBlock());   // ← 替换 LAVA
         m_terrain.getChunkAt(cx, cz)->createVBOdata();
     }
+}
+
+// 统一的切换入口：处理回绕 + 发信号
+void MyGL::selectHotbar(int index) {
+    if(m_hotbar.empty()) return;
+    int n = static_cast<int>(m_hotbar.size());
+    index = ((index % n) + n) % n;          // 循环回绕，-1 → 7
+    if(index == m_hotbarIndex) return;
+
+    m_hotbarIndex = index;
+    emit sig_sendCurrentBlock(QString("%1/%2  %3")
+                                  .arg(m_hotbarIndex + 1)
+                                  .arg(n)
+                                  .arg(blockTypeName(currentBlock())));
+}
+
+// 滚轮切换
+void MyGL::wheelEvent(QWheelEvent *e) {
+    // 防止高分辨率滚轮一次触发多个事件
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if(now - m_lastWheelTime < 100) { e->accept(); return; }
+    m_lastWheelTime = now;
+
+    int delta = e->angleDelta().y();
+    if(delta > 0)      selectHotbar(m_hotbarIndex - 1);  // 上滚 → 上一个
+    else if(delta < 0) selectHotbar(m_hotbarIndex + 1);  // 下滚 → 下一个
+    e->accept();
 }
