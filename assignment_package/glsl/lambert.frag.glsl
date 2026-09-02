@@ -12,8 +12,17 @@
 // position, light position, and vertex color.
 
 uniform vec4 u_Color; // The color with which to render this instance of geometry.
-uniform sampler2D u_Texture;        // ★ 新增：纹理采样器
-uniform float u_Time;           // ★ 时间 (秒)
+uniform sampler2D u_Texture;        //纹理采样器
+uniform float u_Time;           //时间 (秒)
+uniform sampler2DShadow u_ShadowMap;   // 纹理单元 2
+uniform sampler2DShadow u_PrevShadowMap1;
+uniform sampler2DShadow u_PrevShadowMap2;
+uniform sampler2DShadow u_PrevShadowMap3;
+uniform mat4 u_PrevLightVP1;
+uniform mat4 u_PrevLightVP2;
+uniform mat4 u_PrevLightVP3;
+uniform mat4 u_LightVP;                // 太阳的 ViewProj(与深度 pass 相同)
+uniform int u_ShadowEnabled;           // 调试用:0=强制无阴影
 
 uniform sampler2D u_NormalMap;   // 纹理单元 1
 uniform vec3 u_LightDir;         // 指向光源
@@ -47,6 +56,29 @@ mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv) {
     vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
     float invmax = inversesqrt(max(dot(T,T), dot(B,B)));
     return mat3(T * invmax, B * invmax, N);
+}
+
+// 对指定 LightVP/贴图做一次 5x5 PCF 采样,返回 [0,1]
+float sampleShadowPCF(sampler2DShadow shadowMap, mat4 lightVP,
+                      vec4 worldPos, float bias) {
+    vec4 lightSpace = lightVP * worldPos;
+    vec3 shadowCoord = lightSpace.xyz / lightSpace.w * 0.5 + 0.5;
+    if(shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
+       shadowCoord.y < 0.0 || shadowCoord.y > 1.0 ||
+       shadowCoord.z > 1.0) {
+        return 1.0;    // 贴图范围外:视为不遮挡
+    }
+    float pcfSum = 0.0;
+    float texel = 1.0 / 4096.0;      // ★ float,别写 vec2(上次的教训)
+    float stride = 1.5;
+    for(int x = -2; x <= 2; ++x) {
+        for(int y = -2; y <= 2; ++y) {
+            pcfSum += texture(shadowMap,
+                              vec3(shadowCoord.xy + vec2(x, y) * texel * stride,
+                                   shadowCoord.z - bias));
+        }
+    }
+    return pcfSum / 25.0;
 }
 
 
@@ -97,10 +129,27 @@ void main()
     // Avoid negative lighting values
     diffuseTerm = clamp(diffuseTerm, 0, 1);
 
+    // ---------- 阴影贴图采样 ----------
+    float shadowVis = 1.0;
+    if(u_ShadowEnabled == 1) {
+        float bias = max(0.004 * (1.0 - diffuseTerm), 0.0015);
+        // ★ 指数权重:0.5 / 0.25 / 0.125 / 0.125
+        //   越旧权重越低 → 快速走动时旧贴图失配只造成轻微变浅,不拖影
+        float v0 = sampleShadowPCF(u_ShadowMap,     u_LightVP,     fs_Pos, bias);
+        float v1 = sampleShadowPCF(u_PrevShadowMap1, u_PrevLightVP1, fs_Pos, bias);
+        float v2 = sampleShadowPCF(u_PrevShadowMap2, u_PrevLightVP2, fs_Pos, bias);
+        float v3 = sampleShadowPCF(u_PrevShadowMap3, u_PrevLightVP3, fs_Pos, bias);
+        shadowVis = 0.5f*v0 + 0.25f*v1 + 0.125f*v2 + 0.125f*v3;
+        shadowVis = 0.35 + 0.65 * shadowVis;
+    }
+
+    diffuseTerm *= shadowVis;
+
     // 高光：液体/雪更亮更锐，普通方块很弱
     float shininess    = isFluid ? 64.0 : 16.0;
     float specStrength = isFluid ? 0.6  : 0.15;
     float specularTerm = pow(clamp(dot(N, H), 0.0, 1.0), shininess) * specStrength;
+    specularTerm *= shadowVis;
 
     vec3 ambient  = u_AmbientColor;
     vec3 diffuse  = u_LightColor * diffuseTerm;

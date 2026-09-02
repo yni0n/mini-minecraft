@@ -6,6 +6,14 @@
 #include <QKeyEvent>
 #include <QDateTime>
 
+// GL 错误探针:消费并打印错误发生位置
+static void glProbe(const char* where) {
+    GLenum e = glGetError();
+    if(e != GL_NO_ERROR) {
+        fprintf(stderr, "[GL探针] 错误 0x%X 发生于: %s\n", e, where);
+    }
+}
+
 // ============================================================
 // 视锥体裁剪工具（放在 mygl.cpp 顶部，所有函数之前）
 // ============================================================
@@ -85,6 +93,7 @@ MyGL::MyGL(QWidget *parent)
       m_progPostProcess(this),      // ★ 新增
       m_progSky(this),              // ★ 新增
       m_screenQuad(this),            // ★ 新增
+      m_progShadow(this),
       m_hasTarget(false),                // ★ 新增
       m_texture(0),   // ★ 初始化为 0
       m_frameBuffer(0),              // ★ 新增
@@ -174,6 +183,9 @@ void MyGL::initializeGL()
     m_progSky.create(":/glsl/postprocess.vert.glsl", ":/glsl/sky.frag.glsl");
     m_screenQuad.createVBOdata();
     createFBO(this->width(), this->height());
+
+    m_progShadow.create(":/glsl/shadow.vert.glsl", ":/glsl/shadow.frag.glsl");
+    createShadowFBO();
     //发送当前选择方块
     emit sig_sendCurrentBlock(QString("1/%1  %2")
                                   .arg(m_hotbar.size())
@@ -252,6 +264,7 @@ void MyGL::paintGL() {
     //计算太阳方向
     m_sunDir = computeSunDir();
 
+    renderShadowPass();   glProbe("renderShadowPass 之后");// ★ Pass 0:渲染太阳视角深度
     // ============================================================
     // Pass 1：渲染 3D 场景到 FBO 纹理
     // ============================================================
@@ -265,8 +278,8 @@ void MyGL::paintGL() {
     m_progFlat.setUnifMat4("u_ViewProj", viewproj);
     m_progInstanced.setUnifMat4("u_ViewProj", viewproj);
 
-    renderSky(viewproj);   // ★ 新增:先画天空(不写深度),地形后画自动遮挡
-    renderTerrain();//绘制地形
+    renderSky(viewproj);   glProbe("renderSky 之后");// ★ 新增:先画天空(不写深度),地形后画自动遮挡
+    renderTerrain();    glProbe("renderTerrain 之后");//绘制地形
 
     // ★ 新增：渲染方块描边
     if(m_hasTarget) {
@@ -313,6 +326,8 @@ void MyGL::paintGL() {
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
+
+    glProbe("帧末尾");//debug
 }
 
 void MyGL::createFBO(int width, int height) {
@@ -354,11 +369,129 @@ void MyGL::createFBO(int width, int height) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void MyGL::createShadowFBO() {
+    const int SHADOW_RES = 4096;
+
+    for(int i = 0; i < SHADOW_FRAMES; ++i) {
+        glGenFramebuffers(1, &m_shadowFBO[i]);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFBO[i]);
+
+        glGenTextures(1, &m_shadowDepthTex[i]);
+        glBindTexture(GL_TEXTURE_2D, m_shadowDepthTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24,
+                     SHADOW_RES, SHADOW_RES, 0,
+                     GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        // ★ 关键:开启硬件深度比较,LINEAR = 免费 2x2 PCF 软化
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE,
+                        GL_COMPARE_REF_TO_TEXTURE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                               GL_TEXTURE_2D, m_shadowDepthTex[i], 0);
+
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            qDebug() << "Shadow FBO" << i << "incomplete!";
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+
+void MyGL::renderShadowPass() {
+    if(!m_shadowsEnabled) {
+        m_shadowFirstFrame = true; //下次绘画是第一帧
+        return;   // 按键关闭
+    }
+
+    // ---------- 0. 保存当前视口,结束后原样恢复 ----------
+    GLint origViewport[4];
+    glGetIntegerv(GL_VIEWPORT, origViewport);
+
+    // ---------- 1. 光源方向:与 renderTerrain 的逻辑一致(夜里翻转为月亮) ----------
+    m_lightDir = (m_sunDir.y >= -0.05f) ? m_sunDir : -m_sunDir;
+    // 防止太阳贴地平线时 lookAt 退化(up 与视线平行)
+    glm::vec3 s = m_lightDir;
+    if(s.y < 0.08f) {
+        s.y = 0.08f;
+        s = glm::normalize(s);
+    }
+    // ★ 把太阳方位角/俯仰角量化到 0.5° 步长
+    // float yaw   = std::atan2(s.x, s.z);
+    // float pitch = std::asin(glm::clamp(s.y, -1.f, 1.f));
+    // const float step = glm::radians(0.25f);  // 将太阳步长改为0.25
+    // yaw   = std::round(yaw / step) * step;
+    // pitch = std::round(pitch / step) * step;
+    // s = glm::vec3(std::cos(pitch) * std::sin(yaw),
+    //               std::sin(pitch),
+    //               std::cos(pitch) * std::cos(yaw));
+
+    // ---------- 2. 太阳正交矩阵:以玩家为中心 ±100 的盒子 ----------
+    glm::vec3 playerPos = m_player.mcr_position;
+    // 光空间三轴在世界空间中的方向(太阳已量化,三轴恒定)
+    glm::vec3 fwd   = -s;                                             // 视线:太阳 → 目标
+    glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0, 0, 1)));
+    glm::vec3 up    = glm::cross(right, fwd);
+    // ★ 纹素对齐(修正版):把盒中心在【光空间】的 x/y 取整到纹素网格
+    //   参考点是世界原点(而非玩家)——玩家在"跟随自己的视图"里坐标恒定,取整无效
+    const float texelWorld = 300.f / 4096.f;   // ≈ 0.049m
+    float rx = glm::dot(playerPos, right);
+    float ry = glm::dot(playerPos, up);
+    rx = glm::round(rx / texelWorld) * texelWorld;
+    ry = glm::round(ry / texelWorld) * texelWorld;
+    float rz = glm::dot(playerPos, fwd);       // 沿视线方向:正交投影下平移不影响贴图
+    glm::vec3 center = right * rx + up * ry + fwd * rz;
+
+    glm::vec3 eye = center + s * 300.f;
+    glm::mat4 lightView = glm::lookAt(eye, center, glm::vec3(0, 0, 1));
+    glm::mat4 lightProj = glm::ortho(-150.f, 150.f, -150.f, 150.f, 0.1f, 600.f);
+    glm::mat4 newVP = lightProj * lightView;
+    m_shadowIdx = (m_shadowIdx + 1) % SHADOW_FRAMES;    // 环形推进
+    m_shadowVP[m_shadowIdx] = newVP;
+
+    // ---------- 3. 渲染深度 ----------
+    // 首帧没有历史,两张贴图用同一个 VP 各渲染一次,避免首帧全黑
+    int renderCount = m_shadowFirstFrame ? SHADOW_FRAMES : 1;
+    if(m_shadowFirstFrame) {
+        for(int i = 0; i < SHADOW_FRAMES; ++i) m_shadowVP[i] = newVP;
+    }
+    for(int k = 0; k < renderCount; ++k) {
+        int idx = (m_shadowIdx - k + SHADOW_FRAMES) % SHADOW_FRAMES;
+        glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFBO[idx]);
+        glViewport(0, 0, 4096, 4096);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);   // 只写深度
+
+        m_progShadow.setUnifMat4("u_ViewProj", m_shadowVP[idx]);
+
+        int pzX = static_cast<int>(glm::floor(playerPos.x / 64.f)) * 64;
+        int pzZ = static_cast<int>(glm::floor(playerPos.z / 64.f)) * 64;
+        for(int dx = -2; dx <= 2; ++dx) {
+            for(int dz = -2; dz <= 2; ++dz) {
+                m_terrain.draw(pzX + dx * 64, pzX + dx * 64 + 64,
+                               pzZ + dz * 64, pzZ + dz * 64 + 64,
+                               &m_progShadow, nullptr);
+            }
+        }
+    }
+    m_shadowFirstFrame = false;
+
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(origViewport[0], origViewport[1],
+               origViewport[2], origViewport[3]);  // ★ 恢复成保存的屏幕分辨率
+}
+
+
 glm::vec3 MyGL::computeSunDir() const {
     const float dayLength = 120.0f;
     const float TWO_PI = 6.2831853f;
-    float phase = glm::mod(m_elapsedTime, dayLength) / dayLength * TWO_PI;
+    float phase = glm::mod(m_elapsedTime + dayLength * 0.125f, dayLength) / dayLength * TWO_PI;
     return glm::normalize(glm::vec3(glm::cos(phase), glm::sin(phase), 0.f));
+    //return glm::normalize(glm::vec3(0.7071, 0.7071, 0.0));
 }
 
 void MyGL::computeFogColors(glm::vec3& fogSun, glm::vec3& fogDusk) const {
@@ -408,6 +541,22 @@ void MyGL::renderTerrain() {
     glBindTexture(GL_TEXTURE_2D, m_normalTexture);
     m_progLambert.setUnifInt("u_NormalMap", 1);
     glActiveTexture(GL_TEXTURE0);   // 记得切回 0，别破坏后面的绑定
+    // ★ 绑定阴影贴图到纹理单元 2(0/1 已被图集和法线占用)
+    // 单元 2=最新,3/4/5=逐级旧一帧
+    for(int k = 0; k < SHADOW_FRAMES; ++k) {
+        int idx = (m_shadowIdx - k + SHADOW_FRAMES) % SHADOW_FRAMES;
+        glActiveTexture(GL_TEXTURE2 + k);
+        glBindTexture(GL_TEXTURE_2D, m_shadowDepthTex[idx]);
+        m_progLambert.setUnifInt(k == 0 ? "u_ShadowMap"
+                                        : "u_PrevShadowMap" + std::to_string(k),
+                                 2 + k);
+        m_progLambert.setUnifMat4(k == 0 ? "u_LightVP"
+                                         : "u_PrevLightVP" + std::to_string(k),
+                                  m_shadowVP[idx]);
+    }
+    m_progLambert.setUnifInt("u_ShadowEnabled", m_shadowsEnabled ? 1 : 0);;
+    glActiveTexture(GL_TEXTURE0);   // 切回 0
+
 
     // 根据太阳/月亮位置决定定向光
     glm::vec3 sunDir = m_sunDir;
@@ -416,7 +565,7 @@ void MyGL::renderTerrain() {
     float sunFactor = glm::smoothstep(-0.05f, 0.1f, sy);
     float moonFactor = glm::smoothstep(0.1f, 0.20f, -sy);
     // 光照方向始终指向太阳;夜里 lightColor=0,方向无所谓
-    glm::vec3 lightDir = (sy >= -0.05f) ? m_sunDir : -m_sunDir;
+    glm::vec3 lightDir = m_lightDir;   // 由 renderShadowPass 每帧更新
     // 低角度偏暖橙,正午偏白
     glm::vec3 sunTint = glm::mix(glm::vec3(0.6f, 0.45f, 0.25f),
                                  glm::vec3(0.7f, 0.7, 0.65),
@@ -572,6 +721,7 @@ void MyGL::keyPressEvent(QKeyEvent *e) {
     case Qt::Key_E:     m_inputs.ePressed     = true; break;
     case Qt::Key_Space: m_inputs.spacePressed = true; break;
     case Qt::Key_F:     m_inputs.fPressed     = true; break;
+    case Qt::Key_Y: m_shadowsEnabled = !m_shadowsEnabled; break;
     case Qt::Key_N: m_normalMapEnabled = !m_normalMapEnabled; break;
     }
 }

@@ -10,5 +10,7 @@
         <file>glsl/postprocess.vert.glsl</file>
         <file>glsl/postprocess.frag.glsl</file>
         <file>glsl/sky.frag.glsl</file>
+        <file>glsl/shadow.vert.glsl</file>
+        <file>glsl/shadow.frag.glsl</file>
     </qresource>
 </RCC>

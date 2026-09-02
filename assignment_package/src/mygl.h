@@ -65,6 +65,21 @@ private:
     ScreenQuad m_screenQuad;          // 全屏四边形
     ShaderProgram m_progSky;      // 天空纹理映射着色器
 
+    ShaderProgram m_progShadow;      // 深度 pass 着色器
+    bool m_shadowsEnabled = true;
+    static constexpr int SHADOW_FRAMES = 4;          // 时间累积帧数
+    GLuint m_shadowFBO[SHADOW_FRAMES] = {0,0,0,0};
+    GLuint m_shadowDepthTex[SHADOW_FRAMES] = {0,0,0,0};
+    glm::mat4 m_shadowVP[SHADOW_FRAMES];             // [m_shadowIdx]=最新,往前越旧
+    int m_shadowIdx = 0;
+    bool m_shadowFirstFrame = true;
+
+    glm::vec3 m_lightDir;            // 阴影用光源方向(与 renderTerrain 的 lightDir 一致)
+
+    void createShadowFBO();          // 创建一次(固定 2048,不随窗口重建)
+    void renderShadowPass();         // 每帧的深度 pass
+
+
     void createFBO(int width, int height);   // 创建/重建 FBO
     int getFluidType() const;                // 检测相机所在流体类型
 
