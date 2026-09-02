@@ -10,6 +10,9 @@ uniform vec3 u_Eye; // Camera pos
 
 uniform float u_Time;
 uniform vec3 u_SunDir;   // 太阳方向,由 CPU 每帧计算
+uniform float u_WeatherFactor;  // 0=晴, 1=满强度降水
+uniform int   u_IsSnow;         // 0=雨(铅灰), 1=雪(苍白)
+
 
 out vec4 out_Col;
 
@@ -322,7 +325,8 @@ void main()
     float twinkle = 0.5 + 0.5 * sin(u_Time * 2.0 + (starHash.x + starHash.y) * 6.2831);
     float starHeight = smoothstep(0.6, 0.68, uv.y);             // 地平线以上渐显
     float farFade = smoothstep(-0.5, -0.2, dot(rayDir, moonDirS)); // 距月亮>~120°(接近太阳方向)淡出
-    float starMask = starCore * starProb * starHeight * nightBlend * twinkle * farFade;
+    float starMask = starCore * starProb * starHeight * nightBlend * twinkle * farFade
+                   * (1.0 - u_WeatherFactor);   // ★ 降水时星空被云遮住
     vec3 starCol = mix(vec3(0.9, 0.92, 1.0), vec3(1.0, 0.96, 0.9), starHash.y);
     outColor += starMask * starCol * 1.8;
 
@@ -405,9 +409,14 @@ void main()
 
     vec3 cldCol = clamp(mix(outColor * 1.35, vec3(1.05, 1.05, 1.0), dayBlend), 0.0, 1.0);
     cldCol *= clamp(0.82 + 0.22 * cc, 0.0, 1.0);   // 夜晚压暗,保持"比背景浅"
-    float cldMask = clamp(cloudcover + cloudalpha * cf * cr + cc, 0.0, 1.0);
+    float cldMask = clamp(cloudcover + u_WeatherFactor * 0.4 + cloudalpha * cf * cr + cc, 0.0, 1.0); //云层增厚
     cldMask *= smoothstep(0.5, 0.58, uv.y);               // 仅地平线以上显示(沿用你原有行为)
     outColor = mix(outColor, cldCol, cldMask * 0.85);
+
+    // ★ 天气收尾：整个天空朝阴天天色混合
+    vec3 overcast = (u_IsSnow == 1) ? vec3(0.75, 0.77, 0.80)   // 雪天：苍白亮灰
+                                    : vec3(0.35, 0.37, 0.42);  // 雨天：铅灰压暗
+    outColor = mix(outColor, overcast, u_WeatherFactor * 0.7);
 
     out_Col = vec4(outColor, 1.0);
 

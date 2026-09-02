@@ -11,7 +11,9 @@
 #include "scene/camera.h"
 #include "scene/terrain.h"
 #include "scene/player.h"
-#include "scene/blockwireframe.h"          // ★ 新增
+#include "scene/blockwireframe.h"
+#include "weather.h"
+#include "weatherparticles.h"
 
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLShaderProgram>
@@ -90,6 +92,12 @@ private:
 
     void computeFogColors(glm::vec3& fogSun, glm::vec3& fogDusk) const;  // 两个方向的雾色   // 与天空地平线一致的雾色
     float m_fogDensity = 0.012f;         // 雾密度，越大越雾
+    WeatherSystem m_weather;   // ★ 天气系统
+    ShaderProgram m_progWeather;            // ★ 天气粒子着色器
+    WeatherParticles m_weatherParticles;    // ★ 粒子池
+    void renderWeather();                   // ★ 粒子绘制
+
+
 
     // ★ 热键栏：滚轮在这 8 种方块之间循环
     std::vector<BlockType> m_hotbar = { GRASS, DIRT, STONE, SAND,

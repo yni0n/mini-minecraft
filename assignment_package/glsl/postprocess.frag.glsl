@@ -5,7 +5,6 @@ in vec2 fs_UV;
 uniform sampler2D u_ScreenTexture;  // FBO 渲染出的场景纹理
 uniform int   u_FluidType;          // 0=无, 1=水, 2=岩浆
 uniform float u_Time;              // 运行时间(秒)
-
 out vec4 out_Col;
 
 void main() {

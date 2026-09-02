@@ -94,6 +94,8 @@ MyGL::MyGL(QWidget *parent)
       m_progSky(this),              // ★ 新增
       m_screenQuad(this),            // ★ 新增
       m_progShadow(this),
+      m_progWeather(this),
+      m_weatherParticles(this),
       m_hasTarget(false),                // ★ 新增
       m_texture(0),   // ★ 初始化为 0
       m_frameBuffer(0),              // ★ 新增
@@ -184,8 +186,13 @@ void MyGL::initializeGL()
     m_screenQuad.createVBOdata();
     createFBO(this->width(), this->height());
 
+    //影子
     m_progShadow.create(":/glsl/shadow.vert.glsl", ":/glsl/shadow.frag.glsl");
     createShadowFBO();
+    // 天气粒子着色器 + 粒子池(6000 个)
+    m_progWeather.create(":/glsl/weather.vert.glsl", ":/glsl/weather.frag.glsl");
+    m_weatherParticles.create(8000);
+
     //发送当前选择方块
     emit sig_sendCurrentBlock(QString("1/%1  %2")
                                   .arg(m_hotbar.size())
@@ -226,6 +233,13 @@ void MyGL::tick() {
     m_terrain.tick(m_player.mcr_position);
 
     m_player.tick(dT, m_inputs);
+    m_weather.tick(dT);   // ★ 天气状态机推进
+    // ★ 粒子推进：相机位置 + 天气强度 + 雨雪类型
+    m_weatherParticles.tick(dT, m_player.mcr_camera.mcr_position,
+                            m_weather.intensity(),
+                            m_weather.isSnow());
+
+
     m_inputs.mouseX = 0.f;
     m_inputs.mouseY = 0.f;
 
@@ -277,9 +291,12 @@ void MyGL::paintGL() {
     m_progLambert.setUnifMat4("u_ViewProj", viewproj);
     m_progFlat.setUnifMat4("u_ViewProj", viewproj);
     m_progInstanced.setUnifMat4("u_ViewProj", viewproj);
+    m_progWeather.setUnifMat4("u_ViewProj", viewproj);
+
 
     renderSky(viewproj);   glProbe("renderSky 之后");// ★ 新增:先画天空(不写深度),地形后画自动遮挡
     renderTerrain();    glProbe("renderTerrain 之后");//绘制地形
+    renderWeather();    glProbe("renderWeather 之后");// ★ 天气粒子(画在透明地形之后)
 
     // ★ 新增：渲染方块描边
     if(m_hasTarget) {
@@ -487,7 +504,7 @@ void MyGL::renderShadowPass() {
 
 
 glm::vec3 MyGL::computeSunDir() const {
-    const float dayLength = 120.0f;
+    const float dayLength = 600.0f;
     const float TWO_PI = 6.2831853f;
     float phase = glm::mod(m_elapsedTime + dayLength * 0.125f, dayLength) / dayLength * TWO_PI;
     return glm::normalize(glm::vec3(glm::cos(phase), glm::sin(phase), 0.f));
@@ -575,16 +592,28 @@ void MyGL::renderTerrain() {
     glm::vec3 ambientColor = glm::mix(glm::vec3(0.07f, 0.08f, 0.13f),  // 夜:冷暗
                                       glm::vec3(0.45f),                 // 日:中性
                                       sunFactor);
+    // ★ 天气调制：阴天直射光被云削弱，环境光偏灰
+    float weatherW = m_weather.intensity();
+    lightColor   *= (1.f - 0.65f * weatherW);
+    glm::vec3 overcastAmb = m_weather.isSnow() ? glm::vec3(0.40f, 0.42f, 0.46f)  // 雪天苍白
+                                               : glm::vec3(0.30f, 0.32f, 0.37f); // 雨天铅灰
+    ambientColor  = glm::mix(ambientColor, overcastAmb, weatherW);
     m_progLambert.setUnifVec3("u_LightDir", lightDir);
     m_progLambert.setUnifVec3("u_LightColor", lightColor);
     m_progLambert.setUnifVec3("u_AmbientColor", ambientColor);
     m_progLambert.setUnifVec3("u_Eye", m_player.mcr_camera.mcr_position);
     glm::vec3 fogSun, fogDusk;
     computeFogColors(fogSun, fogDusk);
+    // ★ 天气调制：雾色趋同阴天色 + 雾密度增大（雪天更浓）
+    glm::vec3 overcastFog = m_weather.isSnow() ? glm::vec3(0.78f, 0.80f, 0.84f)
+                                               : glm::vec3(0.45f, 0.47f, 0.52f);
+    fogSun  = glm::mix(fogSun,  overcastFog, weatherW);
+    fogDusk = glm::mix(fogDusk, overcastFog, weatherW);
     m_progLambert.setUnifVec3("u_FogSunColor", fogSun);
     m_progLambert.setUnifVec3("u_FogDuskColor", fogDusk);
     m_progLambert.setUnifVec3("u_FogSunDir", m_sunDir);   // 方向雾用（注意不是 u_LightDir，夜里不翻转）
-    m_progLambert.setUnifFloat("u_FogDensity", m_fogDensity);
+    float fogDensity = m_fogDensity * (1.f + weatherW * (m_weather.isSnow() ? 3.f : 2.f));//天气影响雾效果
+    m_progLambert.setUnifFloat("u_FogDensity", fogDensity);
     m_progLambert.setUnifInt("u_NormalMapEnabled", m_normalMapEnabled ? 1 : 0);
 
 
@@ -656,6 +685,8 @@ void MyGL::renderSky(const glm::mat4 &viewproj) {
     glm::vec3 sunDir = m_sunDir;
 
     m_progSky.setUnifVec3("u_SunDir", sunDir);
+    m_progSky.setUnifFloat("u_WeatherFactor", m_weather.intensity()); //传入天气影响因子
+    m_progSky.setUnifInt("u_IsSnow", m_weather.isSnow() ? 1 : 0);    //是否下雪
 
     // 天空永远在最远处:不参与深度测试、不写深度
     // 这样后画的地形能正常遮挡天空
@@ -668,6 +699,34 @@ void MyGL::renderSky(const glm::mat4 &viewproj) {
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
     glEnable(GL_BLEND);
+}
+
+// ★ 天气粒子：透明混合绘制，不写深度，不进阴影pass
+void MyGL::renderWeather() {
+    if(m_weather.intensity() <= 0.001f) return;
+
+    // 相机 right/up（billboard 展开用）
+    glm::vec3 fwd = m_player.mcr_camera.mcr_forward;
+    glm::vec3 camRight = glm::normalize(glm::cross(fwd, glm::vec3(0, 1, 0)));
+    glm::vec3 camUp    = glm::cross(camRight, glm::normalize(fwd));
+
+    m_progWeather.setUnifVec3("u_CameraRight", camRight);
+    m_progWeather.setUnifVec3("u_CameraUp", camUp);
+    m_progWeather.setUnifVec3("u_Eye", m_player.mcr_camera.mcr_position);
+    m_progWeather.setUnifFloat("u_Snow", m_weather.isSnow() ? 1.f : 0.f);
+    m_progWeather.setUnifFloat("u_Alpha",
+                               m_weather.isSnow() ? 0.9f : 0.55f);   // 雨整体更透
+
+    // 状态组合：深度测试开着(被山遮挡)、不写深度(粒子互相不打架)、alpha混合
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glDisable(GL_CULL_FACE);   // ★ 粒子是双面薄面片，且绕序与地形的 CW 设置相反
+
+    m_weatherParticles.draw(m_progWeather);
+
+    glEnable(GL_CULL_FACE);    // ★ 恢复
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
 }
 
 
@@ -722,6 +781,7 @@ void MyGL::keyPressEvent(QKeyEvent *e) {
     case Qt::Key_Space: m_inputs.spacePressed = true; break;
     case Qt::Key_F:     m_inputs.fPressed     = true; break;
     case Qt::Key_Y: m_shadowsEnabled = !m_shadowsEnabled; break;
+    case Qt::Key_R: m_weather.cycleState(); break;
     case Qt::Key_N: m_normalMapEnabled = !m_normalMapEnabled; break;
     }
 }

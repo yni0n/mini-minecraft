@@ -12,5 +12,7 @@
         <file>glsl/sky.frag.glsl</file>
         <file>glsl/shadow.vert.glsl</file>
         <file>glsl/shadow.frag.glsl</file>
+        <file>glsl/weather.vert.glsl</file>
+        <file>glsl/weather.frag.glsl</file>
     </qresource>
 </RCC>
