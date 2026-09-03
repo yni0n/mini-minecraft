@@ -2,6 +2,7 @@
 #include "cube.h"
 #include "blocktypeworker.h"
 #include "vboworker.h"
+#include <cstdint>   // uint32_t（防御性加上，现有代码多半已间接引入）
 #include <stdexcept>
 #include <glm/gtc/noise.hpp>
 #include <cmath>
@@ -338,6 +339,170 @@ float Terrain::caveNoise(float x, float y, float z) {
     return val;
 }
 
+// ==================== 植被装饰 ====================
+// 确定性 hash：同一世界坐标永远返回同一数值
+// → 相邻 chunk / 重新生成 / 多线程下结果完全一致（无需任何同步）
+static inline uint32_t hashWorld(int x, int y, int z) {
+    uint32_t h = 0x9E3779B9u;                  // 黄金比例常数作种子
+    h ^= static_cast<uint32_t>(x) + 0x9E3779B9u + (h << 6) + (h >> 2);
+    h ^= static_cast<uint32_t>(y) + 0x9E3779B9u + (h << 6) + (h >> 2);
+    h ^= static_cast<uint32_t>(z) + 0x9E3779B9u + (h << 6) + (h >> 2);
+    h ^= (h >> 13);
+    h *= 0x5bd1e995u;
+    h ^= (h >> 15);
+    return h;
+}
+
+// hash → [0, 1) 的均匀浮点，用作"概率掷骰子"
+static inline float hash01(int x, int y, int z) {
+    return hashWorld(x, y, z) / 4294967296.0f;
+}
+
+// ---- 植被密度参数（想调疏密只改这里） ----
+static const float kGrassDensity  = 0.08f;   // 每格草原长草的概率
+static const float kFlowerDensity = 0.005f;   // 每格草原长花的概率
+static const float kCactusDensity = 0.002f;   // 每格沙漠长仙人掌的概率
+
+// 单格植物装饰：草 / 花 / 仙人掌（树在 Step 5 单独加入）
+static void decorateChunk(Chunk* chunk, int startX, int startZ) {
+    for(int x = 0; x < 16; ++x) {
+        for(int z = 0; z < 16; ++z) {
+            int wx = startX + x;
+            int wz = startZ + z;
+
+            // 地表高度：与 fillChunkWithTerrain 同一函数 → 结果确定一致
+            int topY = static_cast<int>(glm::floor(Terrain::getHeightAt(wx, wz)));
+            if(topY < 1 || topY > 254) continue;
+
+            // 只长在开阔地表：头顶第一格必须是空气
+            // （水下沙地、被水淹的格自然跳过，杜绝植物长进水里）
+            if(chunk->getLocalBlockAt(x, topY + 1, z) != EMPTY) continue;
+
+            // 以实际地表方块类型判定生物群系（比再算 blend 更可靠）
+            BlockType surface = chunk->getLocalBlockAt(x, topY, z);
+
+            if(surface == GRASS) {
+                // 草原：草 / 花。先判花、再判草；一格至多一株 → 天然不打架
+                float r = hash01(wx, topY, wz);
+                if(r < kFlowerDensity) {
+                    chunk->setLocalBlockAt(x, topY + 1, z, FLOWER);
+                } else if(r < kFlowerDensity + kGrassDensity) {
+                    chunk->setLocalBlockAt(x, topY + 1, z, TALLGRASS);
+                }
+            }
+            else if(surface == SAND && Terrain::getDesertBlend(wx, wz) > 0.5f) {
+                // 沙漠：仙人掌（getDesertBlend 判定用于排除"水边沙滩"）
+                float r = hash01(wx, topY, wz);
+                if(r < kCactusDensity) {
+                    // 高度按 MC 官方概率：1 格 11/18、2 格 5/18、3 格 2/18
+                    float rh = hash01(wx, topY + 1, wz);   // 换盐 → 与位置判定独立
+                    int h;
+                    if(rh < 11.f / 18.f)      h = 1;
+                    else if(rh < 16.f / 18.f) h = 2;
+                    else                      h = 3;
+                    if(topY + h > 255) h = 255 - topY;     // 防御钳制（正常不会触发）
+                    for(int i = 1; i <= h; ++i) {
+                        chunk->setLocalBlockAt(x, topY + i, z, CACTUS);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== 树的生成 ====================
+// 世界按 8×8 cell 划分，每 cell 至多 1 棵树 → 无需任何距离检查
+// 树落在 cell 中心 ±1 → 相邻 cell 树干距离恒 ≥ 6（树冠半径 2，永不相交）
+// 树的位置/高度全部由 hash(cell 坐标) 决定
+// → 相邻 chunk 各自计算得到同一棵树，各自只写落在自己 16×16 内的方块
+static const float kTreeDensity = 0.15f;   // 每个 cell 出树的概率
+
+static void spawnTrees(Chunk* chunk, int startX, int startZ) {
+    // 只需处理"树冠可能与本 chunk 相交"的 cell：
+    // 本 chunk 外扩 1 个 cell（8 格 ≥ 树冠半径 2 + 抖动 1），startX 是 16 的倍数，除法无余数
+    const int cminX = startX / 8 - 1, cmaxX = startX / 8 + 2;
+    const int cminZ = startZ / 8 - 1, cmaxZ = startZ / 8 + 2;
+
+    for(int cx = cminX; cx <= cmaxX; ++cx) {
+        for(int cz = cminZ; cz <= cmaxZ; ++cz) {
+            // 1) 该 cell 是否出树（不同用途用不同 y 盐，避免数值相关）
+            if(hash01(cx, 0, cz) >= kTreeDensity) continue;
+
+            // 2) 树干世界坐标：cell 中心 (c*8 + 4) + 抖动 ±1
+            int tx = cx * 8 + 4 + static_cast<int>(hash01(cx, 1, cz) * 3.f) - 1;
+            int tz = cz * 8 + 4 + static_cast<int>(hash01(cx, 2, cz) * 3.f) - 1;
+
+            // 3) 树干高度 4~6（树冠另加）
+            int trunkH = 5 + static_cast<int>(hash01(cx, 3, cz) * 3.f);
+
+            // 4) 只长草原（纯噪声判定，可对 chunk 外的坐标求值）：
+            //    topY ≥ 140 排除沙滩/水边；desert/blend 排除沙漠与山地
+            int gY = static_cast<int>(glm::floor(Terrain::getHeightAt(tx, tz)));
+            if(gY < 140)                                  continue;
+            if(Terrain::getDesertBlend(tx, tz) > 0.5f)    continue;
+            if(Terrain::getBiomeBlend(tx, tz) >= 0.5f)    continue;
+
+            // 5) 写入辅助：只写本 chunk 内的格，其余留给邻居补
+            auto put = [&](int bx, int by, int bz, BlockType bt) {
+                int lx = bx - startX, lz = bz - startZ;
+                if(lx < 0 || lx >= 16 || lz < 0 || lz >= 16) return;
+                if(by < 1 || by > 255) return;
+                chunk->setLocalBlockAt(lx, by, lz, bt);
+            };
+            auto putLeaf = [&](int bx, int by, int bz) {
+                if(bx == tx && bz == tz && by <= gY + trunkH) return; // 不覆盖树干
+                put(bx, by, bz, LEAVES);
+            };
+
+            const int trunkTop = gY + trunkH;
+
+            // 树干：立于地表之上
+            for(int i = 1; i <= trunkH; ++i) {
+                put(tx, gY + i, tz, LOG);
+            }
+            // 树冠：方形骨架 + 边缘微扰（缺角/凸出均由世界坐标 hash 决定 → 跨 chunk 一致）
+            // d = max(|dx|,|dz|)（方形轮廓）
+            //   d < r            → 必放（实心）
+            //   d == r（外圈）   → 概率保留：四角更易缺，轮廓出现不规则缺口
+            //   d == r+1（外扩） → 仅四边中点的正外方、低概率冒出一格
+            auto canopyLayer = [&](int by, int r) {
+                for(int dx = -r - 1; dx <= r + 1; ++dx) {
+                    for(int dz = -r - 1; dz <= r + 1; ++dz) {
+                        int ax = (dx < 0) ? -dx : dx;
+                        int az = (dz < 0) ? -dz : dz;
+                        int d  = (ax > az) ? ax : az;
+                        if(d > r) {                              // 轮廓外：只许十字轴方向外扩
+                            if(d != r + 1) continue;
+                            if(ax != 0 && az != 0) continue;
+                            if(hash01(tx + dx, by, tz + dz) < 0.12f)
+                                putLeaf(tx + dx, by, tz + dz);
+                            continue;
+                        }
+                        if(d == r) {                             // 外圈：角低保留、边中高保留
+                            float keep = (ax == r && az == r) ? 0.5f : 0.85f;
+                            if(hash01(tx + dx, by, tz + dz) < keep)
+                                putLeaf(tx + dx, by, tz + dz);
+                            continue;
+                        }
+                        putLeaf(tx + dx, by, tz + dz);           // 内部实心
+                    }
+                }
+            };
+
+            // 树冠三层（每层独立微扰）：两层 5×5 + 一层 3×3，十字顶保持原样
+            canopyLayer(trunkTop - 2, 2);
+            canopyLayer(trunkTop - 1, 2);
+            canopyLayer(trunkTop,     1);
+
+            putLeaf(tx,     trunkTop + 1, tz);
+            putLeaf(tx + 1, trunkTop + 1, tz);
+            putLeaf(tx - 1, trunkTop + 1, tz);
+            putLeaf(tx,     trunkTop + 1, tz + 1);
+            putLeaf(tx,     trunkTop + 1, tz - 1);
+        }
+    }
+}
+
 
 void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
     int startX = MinX;
@@ -425,6 +590,10 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
             }
         }
     }
+    // ---- 第四步：植被装饰（草/花/仙人掌） ----
+    decorateChunk(chunk, startX, startZ);
+    spawnTrees(chunk, startX, startZ);   // 树
+
     chunk->setBlockDataFilled(true);
 }
 
@@ -451,7 +620,7 @@ bool Terrain::checkPlayerCollision(glm::vec3 pos) const {
 
                 // 检查方块是否为实心
                 BlockType b = getGlobalBlockAt(x, y, z);
-                if(b != EMPTY && b != WATER && b != LAVA ) return true;
+                if(b != EMPTY && b != WATER && b != LAVA && b != TALLGRASS && b != FLOWER) return true;
             }
         }
     }

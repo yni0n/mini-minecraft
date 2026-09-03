@@ -30,7 +30,6 @@ private:
     int m_maxCount = 0;
     int m_activeCount = 0;
     float m_time = 0.f;      // 雪花漂移相位用
-    bool m_snow = false;
 
     static constexpr float RADIUS = 48.f;     // 粒子盒水平半径
     static constexpr float TOP_OFFSET = 25.f; // 生成高度在相机上方

@@ -7,7 +7,10 @@ in vec4 vs_Nor;
 in vec4 vs_Col;
 in vec2 vs_UV;
 
+out vec2 fs_UV;     // ★ 新增：传给 frag 做 alpha test
+
 void main() {
+    fs_UV = vs_UV;
     gl_Position = u_ViewProj * vs_Pos;
 }
 

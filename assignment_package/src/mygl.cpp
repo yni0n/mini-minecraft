@@ -63,6 +63,11 @@ static QString blockTypeName(BlockType b) {
     case SNOW:    return "SNOW";
     case LAVA:    return "LAVA";
     case BEDROCK: return "BEDROCK";
+    case LOG:     return "LOG";
+    case LEAVES:  return "LEAVES";
+    case CACTUS:  return "CACTUS";
+    case TALLGRASS:    return "TALLGRASS";
+    case FLOWER:  return "FLOWER";
     default:      return "UNKNOWN";
     }
 }
@@ -189,7 +194,7 @@ void MyGL::initializeGL()
     //影子
     m_progShadow.create(":/glsl/shadow.vert.glsl", ":/glsl/shadow.frag.glsl");
     createShadowFBO();
-    // 天气粒子着色器 + 粒子池(6000 个)
+    // 天气粒子着色器 + 粒子池(8000 个)
     m_progWeather.create(":/glsl/weather.vert.glsl", ":/glsl/weather.frag.glsl");
     m_weatherParticles.create(8000);
 
@@ -246,7 +251,7 @@ void MyGL::tick() {
     // ★ 新增：每帧射线检测，确定瞄准方块
     glm::vec3 origin = m_player.mcr_camera.mcr_position;
     glm::vec3 dir    = m_player.mcr_camera.mcr_forward;
-    RaycastResult result = m_terrain.raycast(origin, dir, 3.0f);
+    RaycastResult result = m_terrain.raycast(origin, dir, 6.0f);
     m_hasTarget = result.hit;
     if(m_hasTarget) {
         m_targetBlock = result.blockPos;
@@ -483,6 +488,11 @@ void MyGL::renderShadowPass() {
         glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);   // 只写深度
 
         m_progShadow.setUnifMat4("u_ViewProj", m_shadowVP[idx]);
+        //植物影子是贴图形状
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_texture);
+        m_progShadow.setUnifInt("u_Texture", 0);
+
 
         int pzX = static_cast<int>(glm::floor(playerPos.x / 64.f)) * 64;
         int pzZ = static_cast<int>(glm::floor(playerPos.z / 64.f)) * 64;
@@ -835,7 +845,7 @@ void MyGL::mousePressEvent(QMouseEvent *e) {
     glm::vec3 origin = m_player.mcr_camera.mcr_position;
     glm::vec3 dir    = m_player.mcr_camera.mcr_forward;
 
-    RaycastResult result = m_terrain.raycast(origin, dir, 3.0f);
+    RaycastResult result = m_terrain.raycast(origin, dir, 6.0f);
 
     // ============ 左键：破坏方块 ============
     if(e->button() == Qt::LeftButton) {

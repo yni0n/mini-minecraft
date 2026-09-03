@@ -16,7 +16,8 @@ struct ChunkVBOData;
 //方块类型：空气，草，土，石头，水
 enum BlockType : unsigned char
 {
-    EMPTY, GRASS, DIRT, STONE, WATER, SNOW, LAVA, BEDROCK, SAND
+    EMPTY, GRASS, DIRT, STONE, WATER, SNOW, LAVA, BEDROCK, SAND,
+    LOG, LEAVES, CACTUS, TALLGRASS, FLOWER //9-13
 };
 
 // The six cardinal directions in 3D space

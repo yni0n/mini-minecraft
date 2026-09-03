@@ -45,7 +45,6 @@ void WeatherParticles::respawn(glm::vec3& pos, float& seed, float& groundY, cons
 void WeatherParticles::tick(float dT, const glm::vec3& camPos,
                             float intensity, bool snow) {
     m_time += dT;
-    m_snow = snow;
     m_activeCount = static_cast<int>(m_maxCount * intensity);   // 强度控制粒子数
 
     for(int i = 0; i < m_activeCount; ++i) {

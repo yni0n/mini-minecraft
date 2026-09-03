@@ -106,6 +106,8 @@ void main()
 
     // Material base color (before shading)
     vec4 diffuseColor = texture(u_Texture, animUV);
+    // ★ alpha test（cutout）：透明像素直接丢弃，不做半透明混合
+    if(diffuseColor.a < 0.5) discard;
     // ---------- 法线贴图 ----------
     vec3 N = normalize(fs_Nor.xyz);
     bool isFluid = fs_Col.a > 0.5;

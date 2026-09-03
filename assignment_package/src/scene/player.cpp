@@ -3,7 +3,7 @@
 
 Player::Player(glm::vec3 pos, const Terrain &terrain)
     : Entity(pos), m_velocity(0,0,0), m_acceleration(0,0,0),
-      m_camera(pos + glm::vec3(0, 1.5f, 0)), mcr_terrain(terrain),
+      m_camera(pos + glm::vec3(0, 1.62f, 0)), mcr_terrain(terrain),
       mcr_camera(m_camera),
       m_flightMode(true)   // ★ 默认飞行模式
 {}
@@ -28,7 +28,7 @@ bool Player::isInFluid(const Terrain &terrain) const {
     }
 
     // 检查眼睛高度（处理半身入水的情况）
-    glm::vec3 eye = m_position + glm::vec3(0.f, 1.5f, 0.f);
+    glm::vec3 eye = m_position + glm::vec3(0.f, 1.62f, 0.f);
     int ex = static_cast<int>(glm::floor(eye.x));
     int ey = static_cast<int>(glm::floor(eye.y));
     int ez = static_cast<int>(glm::floor(eye.z));
@@ -37,6 +37,7 @@ bool Player::isInFluid(const Terrain &terrain) const {
         BlockType b = terrain.getGlobalBlockAt(ex, ey, ez);
         if(b == WATER || b == LAVA) return true;
     }
+    return false;
 }
 
 void Player::processInputs(InputBundle &inputs) {
