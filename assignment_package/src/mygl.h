@@ -96,8 +96,12 @@ private:
     ShaderProgram m_progWeather;            // ★ 天气粒子着色器
     WeatherParticles m_weatherParticles;    // ★ 粒子池
     void renderWeather();                   // ★ 粒子绘制
-
-
+    // ★ 群落自动天气：迟滞 + 手动覆盖
+    void tickBiomeWeather(float dT);   // ★ 每帧：群落 → 天气
+    WeatherState m_pendingWeather = WeatherState::CLEAR;   // 候选天气
+    float m_pendingTimer = 0.f;    // 候选天气已连续保持的秒数
+    bool  m_manualWeather = false; // R 键手动覆盖中
+    float m_manualTimer  = 0.f;    // 手动覆盖剩余秒数
 
     // ★ 热键栏：滚轮在这 8 种方块之间循环
     std::vector<BlockType> m_hotbar = { GRASS, DIRT, STONE, SAND,

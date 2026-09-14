@@ -26,3 +26,7 @@ void WeatherSystem::cycleState() {
     case WeatherState::SNOW:  m_target = WeatherState::CLEAR; break;
     }
 }
+
+void WeatherSystem::request(WeatherState s) {
+    m_target = s;   // 与手动 cycleState 的唯一区别：不轮转，直接指定
+}

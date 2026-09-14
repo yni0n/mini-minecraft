@@ -52,11 +52,16 @@ void WeatherParticles::tick(float dT, const glm::vec3& camPos,
         float& seed = m_particles[i].seed;
 
         if(snow) {
-            pos.y -= 2.2f * dT;                                  // 雪慢
-            // 水平正弦漂移，x/z 相位错开
-            pos.x += glm::sin(m_time * 1.2f + seed * 6.28f) * 0.7f * dT;
-            pos.z += glm::cos(m_time * 0.9f + seed * 9.42f) * 0.7f * dT;
-        } else {
+            float s1 = seed;
+            float s2 = glm::fract(seed * 137.13f);   // 第二个伪随机：同一粒子恒定，不同粒子错开
+            float freq = 0.6f + 1.4f * s1;           // 摆动频率 0.6~2.0，各摆各的
+            float amp  = 0.3f + 0.8f * s2;           // 摆幅 0.3~1.1
+            float fall = 1.6f + 1.2f * s2;           // 下落速度 1.6~2.8，自然分层
+            pos.y -= fall * dT;
+            pos.x += glm::sin(m_time * freq        + s1 * 6.28f) * amp * dT;
+            pos.z += glm::cos(m_time * freq * 0.8f + s2 * 6.28f) * amp * dT;
+        }
+        else {
             pos.y -= 18.f * dT;                                  // 雨快
         }
 
@@ -100,7 +105,7 @@ void WeatherParticles::draw(ShaderProgram& prog) {
     if(prog.m_attribs.count("vs_InstancePos")) {
         int h = prog.m_attribs["vs_InstancePos"];
         mp_context->glEnableVertexAttribArray(h);
-        mp_context->glVertexAttribPointer(h, 4, GL_FLOAT, false, 0, nullptr);
+        mp_context->glVertexAttribPointer(h, 4, GL_FLOAT, false, sizeof(Particle), nullptr);
         mp_context->glVertexAttribDivisor(h, 1);
     }
 

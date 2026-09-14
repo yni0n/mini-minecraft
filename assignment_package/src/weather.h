@@ -11,6 +11,7 @@ class WeatherSystem {
 public:
     void tick(float dT);       // 每帧推进状态机
     void cycleState();         // R 键：切到下一种天气
+    void request(WeatherState s);   // 自动模式入口：只改目标，渐变沿用 tick()
 
     float intensity() const { return m_intensity; }          // 降水强度 0~1
     WeatherState state() const { return m_current; }

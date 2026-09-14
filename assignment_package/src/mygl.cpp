@@ -239,6 +239,7 @@ void MyGL::tick() {
     m_terrain.tick(m_player.mcr_position);
 
     m_player.tick(dT, m_inputs);
+    tickBiomeWeather(dT);     // ★ 群落自动天气
     m_weather.tick(dT);   // ★ 天气状态机推进
     // ★ 粒子推进：相机位置 + 天气强度 + 雨雪类型
     m_weatherParticles.tick(dT, m_player.mcr_camera.mcr_position,
@@ -262,6 +263,25 @@ void MyGL::tick() {
 
     update(); // Calls paintGL() as part of a larger QOpenGLWidget pipeline
     sendPlayerDataToGUI(); // Updates the info in the secondary window displaying player data
+}
+// ★ 群落自动天气：雨林→雨、雪原→雪、其它→晴（1.5s 迟滞 + R 键手动覆盖 30s）
+void MyGL::tickBiomeWeather(float dT) {
+    glm::vec3 pp = m_player.mcr_position;
+    float jw = Terrain::getJungleBlend(pp.x, pp.z);
+    float sw = Terrain::getSnowBlend (pp.x, pp.z);
+    WeatherState desired = (jw > 0.5f) ? WeatherState::RAIN
+                           : (sw > 0.5f) ? WeatherState::SNOW
+                                         : WeatherState::CLEAR;
+
+    if(desired == m_pendingWeather) m_pendingTimer += dT;       // 稳定 → 计时
+    else { m_pendingWeather = desired; m_pendingTimer = 0.f; }  // 变了 → 重新计时
+
+    if(m_manualWeather) {
+        m_manualTimer -= dT;
+        if(m_manualTimer <= 0.f) { m_manualWeather = false; m_pendingTimer = 0.f; }
+    } else if(m_pendingTimer > 1.5f) {
+        m_weather.request(m_pendingWeather);
+    }
 }
 
 void MyGL::sendPlayerDataToGUI() const {
@@ -792,7 +812,11 @@ void MyGL::keyPressEvent(QKeyEvent *e) {
     case Qt::Key_Space: m_inputs.spacePressed = true; break;
     case Qt::Key_F:     m_inputs.fPressed     = true; break;
     case Qt::Key_Y: m_shadowsEnabled = !m_shadowsEnabled; break;
-    case Qt::Key_R: m_weather.cycleState(); break;
+    case Qt::Key_R:
+        m_weather.cycleState();
+        m_manualWeather = true;     // 手动覆盖：暂停自动驱动
+        m_manualTimer   = 30.f;     // 30 秒后恢复自动
+        break;
     case Qt::Key_N: m_normalMapEnabled = !m_normalMapEnabled; break;
     }
 }
