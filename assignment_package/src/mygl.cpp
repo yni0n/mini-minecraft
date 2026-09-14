@@ -111,7 +111,7 @@ MyGL::MyGL(QWidget *parent)
     connect(&m_timer, SIGNAL(timeout()), this, SLOT(tick()));
     // Tell the timer to redraw 60 times per second
     m_timer.start(16);
-    setFocusPolicy(Qt::ClickFocus);
+    setFocusPolicy(Qt::ClickFocus);//鼠标点击窗口之后再进行键盘的接收
 
     setMouseTracking(true);  // MyGL 会追踪鼠标活动即使没有按下
     setCursor(Qt::BlankCursor); // 光标不可见
@@ -288,7 +288,7 @@ void MyGL::paintGL() {
     // Pass 1：渲染 3D 场景到 FBO 纹理
     // ============================================================
     // Clear the screen so that we only see newly drawn images
-    glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);//使用m_frameBuffer作为当前缓冲目标
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     //计算VP，并给3个shader发送
@@ -344,7 +344,7 @@ void MyGL::paintGL() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
 
-    m_progPostProcess.drawScreenQuad(m_screenQuad);
+    m_progPostProcess.drawScreenQuad(m_screenQuad);//按颜色缓冲纹理m_renderTexture内容绘制
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);

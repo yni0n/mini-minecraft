@@ -14,11 +14,16 @@ void main() {
     float alpha;
     vec3 col;
     if(u_Snow > 0.5) {
-        // 雪花：方形（MC 风格），保留窄软边防闪烁
-        vec2 d = abs(fs_UV - 0.5) * 2.0;        // 0=中心, 1=边缘
-        float edge = max(d.x, d.y);             // ★ 方形距离度量
-        alpha = smoothstep(1.0, 0.88, edge);     // 只留 12% 的软边
+        // 雪花：×形（MC 风格），保留窄软边防闪烁
+        vec2 q = fs_UV * 3.0;
+        ivec2 cell = ivec2(floor(q));
+        int id = cell.y * 3 + cell.x;      // 0..8
+        if(id % 2 != 0) discard;           // 只留 0/2/4/6/8 → 九宫格 7 9 5 1 3 的 ×
+        vec2 d = abs(fract(q) - 0.5) * 2.0;
+        float edge = max(d.x, d.y);
+        alpha = smoothstep(1.0, 0.85, edge);   // 每小格各自保留软边
         col = vec3(0.95, 0.96, 1.0);
+
     }
      else {
         // 雨丝：横向中间亮两边淡 + 每根雨丝明暗随机

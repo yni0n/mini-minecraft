@@ -205,10 +205,10 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
         for(int y = 0; y < 256; ++y) {
             for(int x = 0; x < 16; ++x) {
 
-                BlockType curr = getLocalBlockAt(x, y, z);
+                BlockType curr = getLocalBlockAt(x, y, z);//获得方块类型
                 if(curr == EMPTY) continue;
 
-                glm::vec3 worldBase(x + minX, y, z + minZ);
+                glm::vec3 worldBase(x + minX, y, z + minZ);//世界坐标
 
                 // ★ cross 植物：两条对角线竖直 quad，正反绕序各一份 → 写入【不透明】VBO
                 //   放不透明 VBO 的原因：1) 有深度写入，被山体正确遮挡 2) 阴影 pass 只画不透明 VBO
@@ -259,7 +259,7 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                     const FaceData& fd = faceDefs[f];
                     BlockType adj = EMPTY;
 
-                    switch(fd.dir) {
+                    switch(fd.dir) {//获取对应方向的邻居+边界处理
                     case XPOS:
                         if(x == 15) {
                             auto it = m_neighbors.find(XPOS);
@@ -299,14 +299,14 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
 
                     // ========== 面剔除判断 ==========
                     bool currOp = isOpaque(curr);
-                    bool renderFront = true;
+                    bool renderFront = true;//是否要渲染
 
-                    if(adj != EMPTY) {
-                        if(curr == adj && (curr == WATER || curr == LAVA))
+                    if(adj != EMPTY) {//不渲染接触面的情况
+                        if(curr == adj && (curr == WATER || curr == LAVA))//自己与邻居都是液体
                             renderFront = false;
-                        else if(currOp && isOpaque(adj))
+                        else if(currOp && isOpaque(adj))//都不透明
                             renderFront = false;
-                        else if(!currOp && isOpaque(adj))
+                        else if(!currOp && isOpaque(adj))//自己不透明
                             renderFront = false;
                     }
                     //仙人掌不参与共面剔除
@@ -314,9 +314,9 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                     if(curr == CACTUS && adj == CACTUS) renderFront = false;
 
                     glm::vec4 col = blockColor(curr);
-                    glm::ivec2 atlasCell = BLOCK_FACE_ATLAS[curr][f];
+                    glm::ivec2 atlasCell = BLOCK_FACE_ATLAS[curr][f];//当前面的纹理在png的坐标
                     float u0, v0, u1, v1;
-                    atlasToUV(atlasCell.x, atlasCell.y, u0, v0, u1, v1);
+                    atlasToUV(atlasCell.x, atlasCell.y, u0, v0, u1, v1);//在png取样纹理
                     glm::vec2 uvs[4] = {
                         glm::vec2(u0, v1),
                         glm::vec2(u1, v1),
@@ -332,7 +332,7 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                         std::vector<GLuint>&  targetIdx  = toOpaqueVBO ? opaqueIdx   : transparentIdx;
 
 
-                        GLuint baseIdx = static_cast<GLuint>(targetData.size() / 14);
+                        GLuint baseIdx = static_cast<GLuint>(targetData.size() / 14);//目前添加到第几个顶点了
 
                         for(int v = 0; v < 4; ++v) {
                             glm::vec3 corner = (curr == CACTUS) ? cactusInset(fd.dir, fd.corners[v]) : fd.corners[v];
@@ -450,10 +450,10 @@ void Chunk::createVBOdata() {
     buildVBOData(opaqueData, opaqueIdx, transparentData, transparentIdx);
 
     // ---- 上传不透明 VBO ----
-    indexCounts[INDEX] = static_cast<int>(opaqueIdx.size());
-    generateBuffer(INDEX);
-    bindBuffer(INDEX);
-    mp_context->glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+    indexCounts[INDEX] = static_cast<int>(opaqueIdx.size());//存入索引数量
+    generateBuffer(INDEX); //申请句柄
+    bindBuffer(INDEX); //绑定EBO
+    mp_context->glBufferData(GL_ELEMENT_ARRAY_BUFFER, //输入数据到EBO
                              opaqueIdx.size() * sizeof(GLuint),
                              opaqueIdx.data(), GL_STATIC_DRAW);
     generateBuffer(INTERLEAVED);

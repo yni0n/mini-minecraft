@@ -14,7 +14,7 @@ out vec3 fs_WorldPos;
 
 void main() {
     // 雨：细长竖条(0.06 x 0.8)；雪：小方块(0.14)
-    vec2 size = mix(vec2(0.06, 0.8), vec2(0.14, 0.14), u_Snow);
+    vec2 size = mix(vec2(0.06, 0.8), vec2(0.40, 0.40), u_Snow);
     // 雨永远竖直(用世界up)，雪是完整billboard(用相机up)
     vec3 up = mix(vec3(0.0, 1.0, 0.0), u_CameraUp, u_Snow);
     vec3 pos = vs_InstancePos.xyz
