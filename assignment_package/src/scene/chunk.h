@@ -17,7 +17,7 @@ struct ChunkVBOData;
 enum BlockType : unsigned char
 {
     EMPTY, GRASS, DIRT, STONE, WATER, SNOW, LAVA, BEDROCK, SAND,
-    LOG, LEAVES, CACTUS, TALLGRASS, FLOWER //9-13
+    LOG, LEAVES, CACTUS, TALLGRASS, FLOWER, DEADBUSH //9-13
 };
 
 // The six cardinal directions in 3D space

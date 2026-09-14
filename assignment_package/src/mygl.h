@@ -102,7 +102,7 @@ private:
     // ★ 热键栏：滚轮在这 8 种方块之间循环
     std::vector<BlockType> m_hotbar = { GRASS, DIRT, STONE, SAND,
                                        WATER, SNOW, LAVA, BEDROCK,
-                                       LOG, LEAVES, CACTUS, TALLGRASS, FLOWER };
+                                       LOG, LEAVES, CACTUS, TALLGRASS, FLOWER, DEADBUSH };
     int m_hotbarIndex = 0;
 
     BlockType currentBlock() const { return m_hotbar[m_hotbarIndex]; }

@@ -312,6 +312,28 @@ float Terrain::getDesertBlend(float x, float z) {
     return glm::smoothstep(0.6f, 0.85f, t);  // 沙漠只占小部分区域
 }
 
+float Terrain::getJungleBlend(float x, float z) {
+    float n = glm::perlin(glm::vec2(x*0.002f + 2000.f, z*0.002f + 2000.f));
+    float j = glm::smoothstep(0.55f, 0.8f, (n + 1.f) * 0.5f);
+    // 与雪原互斥：雪原权重高的地方把雨林压下去 → 世界不再出现"雪地上的雨林"
+    return j * (1.f - getSnowBlend(x, z));
+}
+
+float Terrain::getJungleHeight(float x, float z) {
+    // 主形态：约 9 格尺度的塘/岛（频 0.055 → 周期约 18 格）
+    float h1 = fractalNoise(glm::vec2(x * 0.055f, z * 0.055f), 2);
+    // 细节：约 3 格尺度的碎边，偏移 +700 让两层噪声互不相关
+    float h2 = glm::perlin(glm::vec2(x * 0.18f + 700.f, z * 0.18f + 700.f));
+    return 138.f + h1 * 2.0f + h2 * 0.7f;   // 约 135.3~140.7，水面仍是 138
+}
+
+//雪原：与沙漠同量级的低频掩码，偏移 +3000 与沙漠(+1000)、雨林(+2000)错开
+float Terrain::getSnowBlend(float x, float z) {
+    float n = glm::perlin(glm::vec2(x * 0.003f + 3000.f, z * 0.003f + 3000.f));
+    float t = (n + 1.f) * 0.5f;
+    return glm::smoothstep(0.6f, 0.85f, t);   // 和沙漠一样"只占小部分区域"
+}
+
 //地形属性低频噪声 + smoothstep
 float Terrain::getBiomeBlend(float x, float z) {
     // 低频 Perlin → 大片区域缓慢变化
@@ -362,6 +384,9 @@ static inline float hash01(int x, int y, int z) {
 static const float kGrassDensity  = 0.08f;   // 每格草原长草的概率
 static const float kFlowerDensity = 0.005f;   // 每格草原长花的概率
 static const float kCactusDensity = 0.002f;   // 每格沙漠长仙人掌的概率
+static const float kJungleGrassDensity  = 0.20f;   // 雨林每格长草概率（草原是 0.08）
+static const float kJungleFlowerDensity = 0.02f;   // 雨林每格长花概率（草原是 0.005）
+static const float kDeadBushDensity = 0.005f;   // 雪原每格出枯枝的概率
 
 // 单格植物装饰：草 / 花 / 仙人掌（树在 Step 5 单独加入）
 static void decorateChunk(Chunk* chunk, int startX, int startZ) {
@@ -382,11 +407,14 @@ static void decorateChunk(Chunk* chunk, int startX, int startZ) {
             BlockType surface = chunk->getLocalBlockAt(x, topY, z);
 
             if(surface == GRASS) {
-                // 草原：草 / 花。先判花、再判草；一格至多一株 → 天然不打架
+                // 草原 / 雨林共用草方块，用掩码区分疏密
+                bool jungle = Terrain::getJungleBlend(wx, wz) > 0.5f;
+                float fd = jungle ? kJungleFlowerDensity : kFlowerDensity;
+                float gd = jungle ? kJungleGrassDensity  : kGrassDensity;
                 float r = hash01(wx, topY, wz);
-                if(r < kFlowerDensity) {
+                if(r < fd) {
                     chunk->setLocalBlockAt(x, topY + 1, z, FLOWER);
-                } else if(r < kFlowerDensity + kGrassDensity) {
+                } else if(r < fd + gd) {
                     chunk->setLocalBlockAt(x, topY + 1, z, TALLGRASS);
                 }
             }
@@ -406,6 +434,14 @@ static void decorateChunk(Chunk* chunk, int startX, int startZ) {
                     }
                 }
             }
+            else if(surface == SNOW && Terrain::getSnowBlend(wx, wz) > 0.5f) {
+                // 雪原枯枝：仙人掌的同款落点规则，但只有一格高
+                float r = hash01(wx, topY, wz);
+                if(r < kDeadBushDensity) {
+                    chunk->setLocalBlockAt(x, topY + 1, z, DEADBUSH);
+                }
+            }
+
         }
     }
 }
@@ -416,6 +452,7 @@ static void decorateChunk(Chunk* chunk, int startX, int startZ) {
 // 树的位置/高度全部由 hash(cell 坐标) 决定
 // → 相邻 chunk 各自计算得到同一棵树，各自只写落在自己 16×16 内的方块
 static const float kTreeDensity = 0.15f;   // 每个 cell 出树的概率
+static const float kJungleTreeDensity = 0.60f;   // 雨林出树概率（草原是 0.15）
 
 static void spawnTrees(Chunk* chunk, int startX, int startZ) {
     // 只需处理"树冠可能与本 chunk 相交"的 cell：
@@ -425,22 +462,39 @@ static void spawnTrees(Chunk* chunk, int startX, int startZ) {
 
     for(int cx = cminX; cx <= cmaxX; ++cx) {
         for(int cz = cminZ; cz <= cmaxZ; ++cz) {
-            // 1) 该 cell 是否出树（不同用途用不同 y 盐，避免数值相关）
-            if(hash01(cx, 0, cz) >= kTreeDensity) continue;
+            // 1) 判群落：只用 cell 中心坐标（只取决于 cell → 所有 chunk 结果一致）
+            bool jungle = Terrain::getJungleBlend(cx * 8 + 4, cz * 8 + 4) > 0.5f;
 
-            // 2) 树干世界坐标：cell 中心 (c*8 + 4) + 抖动 ±1
-            int tx = cx * 8 + 4 + static_cast<int>(hash01(cx, 1, cz) * 3.f) - 1;
-            int tz = cz * 8 + 4 + static_cast<int>(hash01(cx, 2, cz) * 3.f) - 1;
+            // 2) 出树骰子：唯一一次判定（原来的 447 行删掉）
+            if(hash01(cx, 0, cz) >= (jungle ? kJungleTreeDensity : kTreeDensity)) continue;
 
-            // 3) 树干高度 4~6（树冠另加）
-            int trunkH = 5 + static_cast<int>(hash01(cx, 3, cz) * 3.f);
+            // 3) 定树干位置 + 校验地表高度
+            int tx, tz, gY;
+            if(jungle) {
+                // 雨林：cell 内试 4 个候选点，取第一个露出水面的陆地
+                bool found = false;
+                tx = tz = gY = 0;
+                for(int k = 0; k < 4 && !found; ++k) {
+                    int ctx = cx * 8 + 4 + static_cast<int>(hash01(cx, 10 + k, cz) * 5.f) - 2;  // ±2
+                    int ctz = cz * 8 + 4 + static_cast<int>(hash01(cx, 20 + k, cz) * 5.f) - 2;
+                    int cy  = static_cast<int>(glm::floor(Terrain::getHeightAt(ctx, ctz)));
+                    if(cy >= 138) { tx = ctx; tz = ctz; gY = cy; found = true; }
+                }
+                if(!found) continue;              // 这个 cell 附近整片是水 → 不种树
+            } else {
+                // 草原：原逻辑一字不动（含 gY / desert / mountain 三道过滤）
+                tx = cx * 8 + 4 + static_cast<int>(hash01(cx, 1, cz) * 3.f) - 1;
+                tz = cz * 8 + 4 + static_cast<int>(hash01(cx, 2, cz) * 3.f) - 1;
+                gY = static_cast<int>(glm::floor(Terrain::getHeightAt(tx, tz)));
+                if(gY < 140)                               continue;
+                if(Terrain::getSnowBlend(tx, tz) > 0.5f)   continue;   // ★ 雪原不长树
+                if(Terrain::getDesertBlend(tx, tz) > 0.5f) continue;
+                if(Terrain::getBiomeBlend(tx, tz) >= 0.5f) continue;
+            }
 
-            // 4) 只长草原（纯噪声判定，可对 chunk 外的坐标求值）：
-            //    topY ≥ 140 排除沙滩/水边；desert/blend 排除沙漠与山地
-            int gY = static_cast<int>(glm::floor(Terrain::getHeightAt(tx, tz)));
-            if(gY < 140)                                  continue;
-            if(Terrain::getDesertBlend(tx, tz) > 0.5f)    continue;
-            if(Terrain::getBiomeBlend(tx, tz) >= 0.5f)    continue;
+            // 4) 树干高度：雨林 8~11，草原 5~7
+            int trunkH = jungle ? (8 + static_cast<int>(hash01(cx, 3, cz) * 4.f))
+                                : (5 + static_cast<int>(hash01(cx, 3, cz) * 3.f));
 
             // 5) 写入辅助：只写本 chunk 内的格，其余留给邻居补
             auto put = [&](int bx, int by, int bz, BlockType bt) {
@@ -490,9 +544,19 @@ static void spawnTrees(Chunk* chunk, int startX, int startZ) {
             };
 
             // 树冠三层（每层独立微扰）：两层 5×5 + 一层 3×3，十字顶保持原样
-            canopyLayer(trunkTop - 2, 2);
-            canopyLayer(trunkTop - 1, 2);
-            canopyLayer(trunkTop,     1);
+            if(jungle) {
+                // 雨林：半径 3 的四层冠，相邻树冠允许相接 → 连成一片（MC 丛林观感）
+                canopyLayer(trunkTop - 3, 3);
+                canopyLayer(trunkTop - 2, 3);
+                canopyLayer(trunkTop - 1, 3);
+                canopyLayer(trunkTop,     2);
+            } else {
+                // 草原：保持原样
+                canopyLayer(trunkTop - 2, 2);
+                canopyLayer(trunkTop - 1, 2);
+                canopyLayer(trunkTop,     1);
+            }
+
 
             putLeaf(tx,     trunkTop + 1, tz);
             putLeaf(tx + 1, trunkTop + 1, tz);
@@ -545,6 +609,8 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
             int waterLevel = 138;//沙滩
             bool nearWater = (topY >= waterLevel - 3 && topY <= waterLevel + 1);
             float desertBlend = getDesertBlend(worldX, worldZ);//沙漠
+            float jungleBlend = getJungleBlend(worldX, worldZ);//雨林
+            float snowBlend = getSnowBlend(worldX, worldZ);//雪原
 
             // ---- 逐 Y 填充方块 + 应用洞穴缓存 ----
             for(int y = 0; y <= 255; ++y) {
@@ -557,7 +623,22 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                     block = STONE;
                 }
                 else if(y <= topY) {
-                    if(desertBlend > 0.5f) {
+                    if(snowBlend > 0.5f) {                    // ★ 雪原：必须排在 jungle / desert 之前
+                        if(topY < waterLevel) {
+                            block = (y > topY - 4) ? SAND : DIRT;   // 过渡带沉在水下的部分
+                        } else if(y == topY) {
+                            block = SNOW;                            // 顶层换成雪块
+                        } else if(y > topY - 4) {
+                            block = SAND;                            // 下面 3 层仍是沙
+                        } else {
+                            block = STONE;
+                        }
+                    }
+                    else if(jungleBlend > 0.5f) {
+                        if(topY < waterLevel) block = (y > topY - 4) ? SAND : DIRT;
+                        else                  block = (y == topY) ? GRASS : ((y > topY - 3) ? DIRT : STONE);
+                    }
+                    else if(desertBlend > 0.5f) {
                         block = (y > topY - 4) ? SAND : STONE;  // 顶部4层沙子
                     }else if(topY < waterLevel) {
                         // 水下：沙底
@@ -620,7 +701,7 @@ bool Terrain::checkPlayerCollision(glm::vec3 pos) const {
 
                 // 检查方块是否为实心
                 BlockType b = getGlobalBlockAt(x, y, z);
-                if(b != EMPTY && b != WATER && b != LAVA && b != TALLGRASS && b != FLOWER) return true;
+                if(b != EMPTY && b != WATER && b != LAVA && b != TALLGRASS && b != FLOWER && b != DEADBUSH) return true;
             }
         }
     }
@@ -724,7 +805,12 @@ float Terrain::getHeightAt(float x, float z) {
     // 先算草原-山地混合
     float grassMountainH = glm::mix(grassH, mountainH, blend);
     // 再用 desert 值平滑过渡到沙漠高度
-    return glm::mix(grassMountainH, desertH, desert);
+    float base = glm::mix(grassMountainH, desertH, desert);
+    //加入雨林
+    base = glm::mix(base, getJungleHeight(x, z), getJungleBlend(x, z));
+    //加入雪原：复用上面已经算好的 desertH，+1 只是让雪原比沙漠略高一点
+    return glm::mix(base, desertH + 1.f, getSnowBlend(x, z));
+
 }
 
 void Terrain::CreateTestScene(glm::vec3 playerPos)

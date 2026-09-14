@@ -68,6 +68,7 @@ static QString blockTypeName(BlockType b) {
     case CACTUS:  return "CACTUS";
     case TALLGRASS:    return "TALLGRASS";
     case FLOWER:  return "FLOWER";
+    case DEADBUSH: return "DEADBUSH";
     default:      return "UNKNOWN";
     }
 }

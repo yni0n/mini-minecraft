@@ -6,11 +6,11 @@ static const int ATLAS_COLS = 16;     // 图集列数（横向）
 
 // ★ 透明方块判定
 static bool isOpaque(BlockType t) {
-    return t != EMPTY && t != WATER && t != TALLGRASS && t != FLOWER && t != CACTUS;
+    return t != EMPTY && t != WATER && t != TALLGRASS && t != FLOWER && t != CACTUS && t != DEADBUSH;
 }
 // ★ cross 模型植物（两个对角线 quad）
 static bool isCrossPlant(BlockType t) {
-    return t == TALLGRASS || t == FLOWER;
+    return t == TALLGRASS || t == FLOWER || t == DEADBUSH;
 }
 // ★ 仙人掌：官方模型不是简单的 14×14 方盒，而是"互锁"结构
 //   - 四个侧面只沿法线方向内缩 1/16，切向保持满 16（相邻面在角部互相咬合）
@@ -112,7 +112,12 @@ static const std::array<glm::ivec2, 6> BLOCK_FACE_ATLAS[] = {
 
     // [13] FLOWER — 先随便填个格子占位，Step 2 才真正用
     { glm::ivec2(0, 12), glm::ivec2(0, 12),glm::ivec2(0, 12),
-     glm::ivec2(0, 12), glm::ivec2(0, 12), glm::ivec2(0, 12) }
+     glm::ivec2(0, 12), glm::ivec2(0, 12), glm::ivec2(0, 12) },
+
+    // [14] DEADBUSH — 十字枯枝，(3,7) 就是图集里的 Deadbush 格
+    { glm::ivec2(3, 7), glm::ivec2(3, 7), glm::ivec2(3, 7),
+     glm::ivec2(3, 7), glm::ivec2(3, 7), glm::ivec2(3, 7) }
+
 
     };
 
@@ -154,6 +159,7 @@ static glm::vec4 blockColor(BlockType t) {
     case CACTUS:   return glm::vec4(1.f, 1.f, 1.f, anim);
     case TALLGRASS: return glm::vec4(1.f, 1.f, 1.f, anim);
     case FLOWER:   return glm::vec4(1.f, 1.f, 1.f, anim);
+    case DEADBUSH: return glm::vec4(1.f, 1.f, 1.f, anim);
 
     default:    return glm::vec4(1.f, 0.f, 1.f, anim);
     }
