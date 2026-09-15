@@ -307,18 +307,38 @@ float Terrain::getDesertHeight(float x, float z) {
     return 145.f + h * 6.f;  // 沙漠更平坦：[129, 141]
 }
 
+// ==================== 群系边界：域扭曲 ====================
+// 把 (x,z) 先用噪声推挤一下再送进 Perlin → 等值线从光滑弧变成蜿蜒边界
+static const float kWarpAmp  = 14.f;      // 扭曲半径（格）
+static const float kWarpFreq = 0.005f;    // 扭曲噪声频率（波长约 125 格）
+static const float kEdgeSpan = 0.10f;   // 抽签带宽度（权重单位，越小越窄）
+
+// 把权重压成以 0.5 为中心的窄带，只用于抽签（不影响高度）
+static inline float edgeWeight(float w) {
+    return glm::clamp((w - 0.5f) / kEdgeSpan + 0.5f, 0.f, 1.f);
+}
+
+static glm::vec2 warpCoord(float x, float z) {
+    glm::vec2 q(x * kWarpFreq + 31.4f, z * kWarpFreq - 27.1f);
+    float wx = glm::perlin(q);
+    float wz = glm::perlin(q + glm::vec2(5.2f, 1.3f));
+    return glm::vec2(x, z) + glm::vec2(wx, wz) * kWarpAmp;   // ±38 格推挤
+}
+
 float Terrain::getDesertBlend(float x, float z) {
+    glm::vec2 p = warpCoord(x, z);
     // 用不同频率/偏移的噪声，避免和草原/山地完全重合
-    float n = glm::perlin(glm::vec2(x * 0.003f + 1000.f, z * 0.003f + 1000.f));
+    float n = glm::perlin(p * 0.003f + glm::vec2(1000.f));
     float t = (n + 1.f) * 0.5f;
-    return glm::smoothstep(0.6f, 0.85f, t);  // 沙漠只占小部分区域
+    return glm::smoothstep(0.6f, 0.85f, t) * (1.f - getBiomeBlend(x, z));  // 沙漠只占小部分区域
 }
 
 float Terrain::getJungleBlend(float x, float z) {
-    float n = glm::perlin(glm::vec2(x*0.002f + 2000.f, z*0.002f + 2000.f));
+    glm::vec2 p = warpCoord(x, z);
+    float n = glm::perlin(p * 0.002f + glm::vec2(2000.f));
     float j = glm::smoothstep(0.55f, 0.8f, (n + 1.f) * 0.5f);
     // 与雪原互斥：雪原权重高的地方把雨林压下去 → 世界不再出现"雪地上的雨林"
-    return j * (1.f - getSnowBlend(x, z));
+    return j * (1.f - getSnowBlend(x, z)) * (1.f - getBiomeBlend(x, z));
 }
 
 float Terrain::getJungleHeight(float x, float z) {
@@ -331,15 +351,17 @@ float Terrain::getJungleHeight(float x, float z) {
 
 //雪原：与沙漠同量级的低频掩码，偏移 +3000 与沙漠(+1000)、雨林(+2000)错开
 float Terrain::getSnowBlend(float x, float z) {
-    float n = glm::perlin(glm::vec2(x * 0.003f + 3000.f, z * 0.003f + 3000.f));
+    glm::vec2 p = warpCoord(x, z);
+    float n = glm::perlin(p * 0.003f + glm::vec2(3000.f));
     float t = (n + 1.f) * 0.5f;
-    return glm::smoothstep(0.6f, 0.85f, t);   // 和沙漠一样"只占小部分区域"
+    return glm::smoothstep(0.6f, 0.85f, t) * (1.f - getBiomeBlend(x, z));   // 和沙漠一样"只占小部分区域"
 }
 
 //地形属性低频噪声 + smoothstep
 float Terrain::getBiomeBlend(float x, float z) {
+    glm::vec2 p = warpCoord(x, z);
     // 低频 Perlin → 大片区域缓慢变化
-    float noise = glm::perlin(glm::vec2(x * 0.002f, z * 0.002f));
+    float noise = glm::perlin(p * 0.002f);
     // 从 [-1, 1] 映射到 [0, 1]
     float t = (noise + 1.f) * 0.5f;
     // smoothstep: 在 [0.25, 0.75] 之间平滑过渡
@@ -354,11 +376,12 @@ static const float kSnowLineFreq   = 0.013f;   // 起伏频率（波长 ≈ 1/fr
 static const float kSnowBandWidth  = 6.f;      // 过渡带半宽（格）
 static const float kSnowSlopeLoose = 0.6f;     // 坡度低于此值 → 容易积雪
 static const float kSnowSlopeSteep = 1.4f;     // 坡度高于此值 → 几乎不积雪
+static const float kSnowAltFalloff = 22.f;   // 高度补偿的衰减尺度（越小 → 高处越快变白）
 
 // 雪线高度：基准高度 + 中频噪声扰动，不再是水平直线
 float Terrain::getSnowLine(float x, float z) {
     float n = glm::perlin(glm::vec2(x * kSnowLineFreq, z * kSnowLineFreq));
-    return kSnowLineBase + n * kSnowLineAmp;      // 约 [170, 222]
+    return kSnowLineBase + n * kSnowLineAmp;      // 约 [152,192]
 }
 
 // 地形坡度：中心差分求梯度模长
@@ -610,7 +633,7 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
             // ---- 第一步：算三种噪声 ----
             //float grassH   = getGrasslandHeight(worldX, worldZ);
             //float mountainH = getMountainHeight(worldX, worldZ);
-            float blend     = getBiomeBlend(worldX, worldZ);
+            //float blend     = getBiomeBlend(worldX, worldZ);
 
             // ---- 第二步：线性插值得到最终高度 ----
             //float finalH = glm::mix(grassH, mountainH, blend);
@@ -637,26 +660,37 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
 
             int waterLevel = 138;//沙滩
             bool nearWater = (topY >= waterLevel - 3 && topY <= waterLevel + 1);
-            float desertBlend = getDesertBlend(worldX, worldZ);//沙漠
-            float jungleBlend = getJungleBlend(worldX, worldZ);//雨林
-            float snowBlend = getSnowBlend(worldX, worldZ);//雪原
+            float wSnow   = getSnowBlend(worldX, worldZ);
+            float wJungle = getJungleBlend(worldX, worldZ);
+            float wDesert = getDesertBlend(worldX, worldZ);
+            float wMtn    = getBiomeBlend(worldX, worldZ);
+
+            // ★ 整列共用一张"签"（y 固定传 0），保证同一列上下层群系一致
+            float r = hash01(worldX, 0, worldZ);
+
+            // 加权抽签：优先级 雪 > 雨林 > 沙漠 > 山地 > 草原
+            float tSnow   = edgeWeight(wSnow);
+            float tJungle = tSnow + edgeWeight(wJungle);
+            float tDesert = tJungle + edgeWeight(wDesert);
+            //float tMtn    = tDesert + wMtn;
+            bool  isSnowBiome = (r < tSnow);
+            bool  isJungle    = !isSnowBiome && (r < tJungle);
+            bool  isDesert    = !isSnowBiome && !isJungle && (r < tDesert);
+            bool  isMountain  = !isSnowBiome && !isJungle && !isDesert && (wMtn >= 0.5f);
+            // 其余情况 = 草原
             // ★ 本列雪线判定：一次性算好，y 循环里直接用（切勿写进 y 循环）
             float snowLine  = getSnowLine(worldX, worldZ);
             bool  topIsSnow = false;
-            bool topHasDirt = topIsSnow && (topY > snowLine + 25.f);   // 只有雪帽区域才铺土
-            static const float kSnowAltFalloff = 22.f;   // 高度补偿的衰减尺度（越小 → 高处越快变白）
-            if(blend >= 0.5f && topY >= waterLevel && !nearWater
-                && snowBlend <= 0.5f && jungleBlend <= 0.5f && desertBlend <= 0.5f
-                && topY >= snowLine) {
+            if(isMountain && topY >= waterLevel && !nearWater && topY >= snowLine) {
                 float slope   = getTerrainSlope(worldX, worldZ);
                 float heightW = glm::smoothstep(snowLine - kSnowBandWidth,
                                                 snowLine + kSnowBandWidth, (float)topY);
                 float slopeW  = 1.f - glm::smoothstep(kSnowSlopeLoose, kSnowSlopeSteep, slope);
-                // ★ 高度补偿：高出雪线越多，越不管坡度，一律积雪
                 float highW   = 1.f - glm::exp(-(topY - snowLine) / kSnowAltFalloff);
                 float p       = glm::max(heightW * slopeW, highW);
                 topIsSnow = (hash01(worldX, topY, worldZ) < p);
             }
+            bool topHasDirt = topIsSnow && (topY > snowLine + 25.f);   // 只有雪帽区域才铺土
 
             // ---- 逐 Y 填充方块 + 应用洞穴缓存 ----
             for(int y = 0; y <= 255; ++y) {
@@ -669,7 +703,7 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                     block = STONE;
                 }
                 else if(y <= topY) {
-                    if(snowBlend > 0.5f) {                    // ★ 雪原：必须排在 jungle / desert 之前
+                    if(isSnowBiome)  {                    // ★ 雪原：必须排在 jungle / desert 之前
                         if(topY < waterLevel) {
                             block = (y > topY - 4) ? SAND : DIRT;   // 过渡带沉在水下的部分
                         } else if(y == topY) {
@@ -680,11 +714,11 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                             block = STONE;
                         }
                     }
-                    else if(jungleBlend > 0.5f) {
+                    else if(isJungle) {
                         if(topY < waterLevel) block = (y > topY - 4) ? SAND : DIRT;
                         else                  block = (y == topY) ? GRASS : ((y > topY - 3) ? DIRT : STONE);
                     }
-                    else if(desertBlend > 0.5f) {
+                    else if(isDesert) {
                         block = (y > topY - 4) ? SAND : STONE;  // 顶部4层沙子
                     }else if(topY < waterLevel) {
                         // 水下：沙底
@@ -692,13 +726,13 @@ void Terrain::fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ) {
                     } else if(nearWater) {
                         // 水边沙滩
                         block = (y > topY - 3) ? SAND : DIRT;
-                    } else if(blend < 0.5f) {
+                    } else if(isMountain) {        // 原 697-699（山地 + 雪线）
+                        block = topIsSnow
+                                    ? ((y == topY) ? SNOW
+                                                   : ((y == topY - 1 && topHasDirt) ? DIRT : STONE))
+                                    : STONE;
+                    } else {                       // 原 695-696：草原
                         block = (y == topY) ? GRASS : DIRT;
-                    } else if(topIsSnow) {
-                        block = (y == topY) ? SNOW
-                                            : ((y == topY - 1 && topHasDirt) ? DIRT : STONE);
-                    } else {
-                        block = STONE;
                     }
                 }
                 else {
