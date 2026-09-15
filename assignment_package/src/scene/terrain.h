@@ -133,6 +133,9 @@ public:
     static void fillChunkWithTerrain(Chunk* chunk, int MinX, int MinZ);
     // ★ 新增：用噪声函数直接计算 (x,z) 处的地表高度（不依赖实际方块数据）
     static float getHeightAt(float x, float z);
+    // ★ 新增：雪线系统
+    static float getSnowLine(float x, float z);      // 该处雪线的世界高度
+    static float getTerrainSlope(float x, float z);  // 该处地形坡度（0=平，2=陡崖）
 
     // Initializes the Chunks that store the 64 x 256 x 64 block scene you
     // see when the base code is run.
