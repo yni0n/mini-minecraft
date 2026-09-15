@@ -224,6 +224,9 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                     atlasToUV(cell.x, cell.y, u0, v0, u1, v1);
                     glm::vec4 col = blockColor(curr);
                     glm::vec4 nor(0.f, 1.f, 0.f, 0.f);   // 法线朝上：植物像地面一样受光（MC 同款做法）
+                    // ★ nor.w = 摆动权重：顶点顺序是 顶左/顶右/底右/底左 → {1,1,0,0}
+                    //   底部 0 = 钉在土里，顶部 1 = 自由摆动（下面不动）
+                    const float swayW[4] = {1.f, 1.f, 0.f, 0.f};
 
                     // 顶点顺序：顶左、顶右、底右、底左 —— 与 uv 数组一一对应，保证贴图不倒
                     glm::vec3 quads[2][4] = {
@@ -243,7 +246,7 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                                 opaqueData.push_back(pos.x); opaqueData.push_back(pos.y);
                                 opaqueData.push_back(pos.z); opaqueData.push_back(pos.w);
                                 opaqueData.push_back(nor.x);  opaqueData.push_back(nor.y);
-                                opaqueData.push_back(nor.z);  opaqueData.push_back(nor.w);
+                                opaqueData.push_back(nor.z);  opaqueData.push_back(swayW[v]);
                                 opaqueData.push_back(col.r);   opaqueData.push_back(col.g);
                                 opaqueData.push_back(col.b);   opaqueData.push_back(col.a);
                                 opaqueData.push_back(uvs[v].x);opaqueData.push_back(uvs[v].y);
@@ -350,7 +353,7 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                             targetData.push_back(fd.normal.x);
                             targetData.push_back(fd.normal.y);
                             targetData.push_back(fd.normal.z);
-                            targetData.push_back(fd.normal.w);
+                            targetData.push_back(curr == LEAVES ? 2.0f : fd.normal.w);   // ★ 树叶整块摆动
                             targetData.push_back(col.r);
                             targetData.push_back(col.g);
                             targetData.push_back(col.b);
@@ -377,10 +380,10 @@ void Chunk::buildVBOData(std::vector<GLfloat>& opaqueData,
                                 glm::vec4 pos = glm::vec4(worldBase + corner, 1.0f);
                                 targetData.push_back(pos.x);  targetData.push_back(pos.y);
                                 targetData.push_back(pos.z);  targetData.push_back(pos.w);
-                                targetData.push_back(col.r);  targetData.push_back(col.g);
-                                targetData.push_back(col.b);  targetData.push_back(col.a);
                                 targetData.push_back(fd.normal.x);  targetData.push_back(fd.normal.y);
                                 targetData.push_back(fd.normal.z);  targetData.push_back(fd.normal.w);
+                                targetData.push_back(col.r);  targetData.push_back(col.g);
+                                targetData.push_back(col.b);  targetData.push_back(col.a);
                                 targetData.push_back(uvs[v].x); targetData.push_back(uvs[v].y);
                             }
                             // 反向绕序的索引（与 cross 植物的反面绕序写法一致）

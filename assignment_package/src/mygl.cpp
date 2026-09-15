@@ -513,7 +513,8 @@ void MyGL::renderShadowPass() {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_texture);
         m_progShadow.setUnifInt("u_Texture", 0);
-
+        m_progShadow.setUnifFloat("u_Time", m_elapsedTime);
+        m_progShadow.setUnifFloat("u_WindStrength", 0.5f + 0.5f * m_weather.intensity());
 
         int pzX = static_cast<int>(glm::floor(playerPos.x / 64.f)) * 64;
         int pzZ = static_cast<int>(glm::floor(playerPos.z / 64.f)) * 64;
@@ -584,6 +585,8 @@ void MyGL::renderTerrain() {
     glBindTexture(GL_TEXTURE_2D, m_texture);
     m_progLambert.setUnifInt("u_Texture", 0);
     m_progLambert.setUnifFloat("u_Time", m_elapsedTime);
+    // ★ 风力随天气变化：晴 0.3 → 暴雨 1.0（渐变由 WeatherSystem 的 4 秒过渡自动给出）
+    m_progLambert.setUnifFloat("u_WindStrength", 0.5f + 0.5f * m_weather.intensity());
     //绑定法线纹理
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_normalTexture);
